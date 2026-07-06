@@ -1,0 +1,72 @@
+# ============================================================
+# Loki 日志存储配置
+# ============================================================
+# 部署方式: StatefulSet（单副本，文件系统存储）
+# 角色: 日志聚合存储 + 查询引擎
+# 更新后需要: kubectl rollout restart statefulset/loki -n monitoring
+# ============================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-config
+  namespace: monitoring
+data:
+  config.yaml: |
+    # ---- 认证 ----
+    auth_enabled: false              # 演示环境关闭认证
+
+    # ---- 服务端口 ----
+    server:
+      http_listen_port: 3100         # HTTP API 端口（Promtail push、Grafana 查询）
+      grpc_listen_port: 9095         # gRPC 端口（Loki 内部组件通信）
+
+    # ---- 存储路径 ----
+    common:
+      path_prefix: /var/loki
+      storage:
+        filesystem:
+          chunks_directory: /var/loki/chunks    # 日志数据块存储
+          rules_directory: /var/loki/rules      # 记录规则存储
+      replication_factor: 1                     # 单副本（演示环境）
+      ring:
+        kvstore:
+          store: inmemory                       # 使用内存存储 ring 状态（无需 etcd）
+
+    # ---- 索引 Schema ----
+    schema_config:
+      configs:
+        - from: 2024-01-01
+          store: tsdb                # 使用 TSDB 索引（Loki 2.8+ 推荐）
+          object_store: filesystem   # 对象存储用本地文件系统
+          schema: v13                # Schema 版本
+          index:
+            prefix: loki_index_      # 索引文件前缀
+            period: 24h              # 索引周期（每天一个索引文件）
+
+    # ---- 数据写入 ----
+    ingester:
+      chunk_encoding: snappy         # 数据压缩算法（snappy 读写均衡）
+      max_chunk_age: 1h              # 超过 1 小时强制切割 chunk
+
+    # ============================================================
+    # 【核心】限流和元数据配置
+    # ============================================================
+    limits_config:
+      # 【关键】启用结构化元数据
+      # 必须设为 true，否则 Promtail 提取的 namespace/pod_name/trace_id
+      # 等自定义 label 会被 Loki 拒绝或丢弃
+      allow_structured_metadata: true
+
+      # 限流配置（演示环境设大值，生产环境按需调整）
+      ingestion_rate_mb: 50          # 每秒写入速率限制
+      ingestion_burst_size_mb: 100   # 突发写入上限
+
+      # 【关键】不限制 stream 数量
+      # Kubernetes 环境每个 Pod 的每个容器都是一个 stream，
+      # 设 0 表示不限制，避免被限流导致日志丢失
+      max_streams_per_user: 0
+      max_global_streams_per_user: 0
+
+    # ---- 告警规则（演示环境关闭）----
+    ruler:
+      alertmanager_url: ""

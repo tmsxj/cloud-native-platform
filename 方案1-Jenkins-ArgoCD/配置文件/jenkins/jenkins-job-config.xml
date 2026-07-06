@@ -1,0 +1,168 @@
+<!--
+=============================================================================
+Jenkins Pipeline Job: snownlp-demo-cicd
+=============================================================================
+功能: SnowNLP 情感分析 Demo 的 CI/CD 流水线
+类型: Inline Script (CpsFlowDefinition)，非 SCM-based Pipeline
+
+为什么用 Inline Script 而不是 SCM Pipeline:
+  问题: SCM Pipeline 需要 Jenkins Git SCM 插件 clone 仓库读取 Jenkinsfile
+        但内网 Git Daemon (git:// 协议) 与 Jenkins SCM 插件兼容性差
+        导致 "No flow definition, cannot run" 错误
+  解决: Inline Script 直接把 Pipeline 代码写入 XML，绕过 SCM 插件
+        在 stage 中手动执行 git clone 命令
+
+流水线 6 个阶段:
+  1. Checkout         → git clone 源码
+  2. Build Image      → Docker Build (自动替换基础镜像地址)
+  3. Push Image       → 推送到 Harbor 镜像仓库
+  4. Update GitOps    → sed 替换 deployment.yaml 中的镜像 tag
+  5. Git Commit & Push → git push 回 Git Server
+  6. Wait ArgoCD Sync → ArgoCD 检测到变更后自动同步（无需手动操作）
+
+使用方法:
+  通过 Jenkins REST API 创建 Job:
+    curl -X POST 'http://<jenkins-ip>:<port>/createItem?name=snownlp-demo-cicd' \
+      -H 'Content-Type: application/xml' \
+      --data-binary @jenkins-job-config.xml
+=============================================================================
+-->
+
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@latest">
+  <actions/>
+  <description>SnowNLP Demo CI/CD Pipeline (Jenkins + ArgoCD GitOps)</description>
+  <keepDependencies>false</keepDependencies>
+  <properties/>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition"
+              plugin="workflow-cps@latest">
+    <script><![CDATA[
+pipeline {
+    // ---- agent: 在 Jenkins Master 上运行（共享 docker.sock） ----
+    agent any
+
+    // ---- 环境变量（编译时可用）----
+    environment {
+        HARBOR_REGISTRY = '192.168.1.61'      // ← 替换为你的 Harbor 地址
+        IMAGE_NAME      = "${HARBOR_REGISTRY}/monitoring/snownlp-demo"
+        // 镜像 Tag 格式: 日期-时间-构建号，例如 20260625-101050-2
+        IMAGE_TAG       = "${new Date().format('yyyyMMdd-HHmmss')}-${BUILD_NUMBER}"
+        DEPLOY_FILE     = '01-app/deployment.yaml'  // ← K8s Deployment YAML 路径
+    }
+
+    stages {
+
+        // ============================================================
+        // Stage 1: 拉取代码
+        // ============================================================
+        stage('Checkout') {
+            steps {
+                echo "=== Stage 1: Checkout ==="
+                // 从内网 Git Server 拉取源码（git:// 协议，9418 端口）
+                git branch: 'main',
+                    url: 'git://git-server.git.svc.cluster.local:9418/snownlp-observability-demo.git'
+            }
+        }
+
+        // ============================================================
+        // Stage 2: 构建 Docker 镜像
+        // ============================================================
+        stage('Build Image') {
+            steps {
+                echo "=== Stage 2: Build ==="
+                dir('01-app') {
+                    // ★关键★ 内网适配: 把 Docker Hub 基础镜像替换为内网 Harbor
+                    // 原始 Dockerfile 中 FROM python:3.9-slim → 内网无法拉取
+                    // TODO: 如果 Dockerfile 中的基础镜像版本变了，这里也要同步修改
+                    sh "sed -i 's|FROM python:3.9-slim|FROM 192.168.1.61/library/python:3.11-slim|' Dockerfile"
+
+                    // 构建镜像（打好 latest 和带时间戳的两个 tag）
+                    sh """
+                        docker build \
+                            -t ${IMAGE_NAME}:${IMAGE_TAG} \
+                            -t ${IMAGE_NAME}:latest \
+                            --label "build.number=${BUILD_NUMBER}" \
+                            --label "build.time=${IMAGE_TAG}" \
+                            .
+                    """
+                }
+            }
+        }
+
+        // ============================================================
+        // Stage 3: 推送镜像到 Harbor
+        // ============================================================
+        stage('Push Image') {
+            steps {
+                echo "=== Stage 3: Push to Harbor ==="
+                sh "docker push ${IMAGE_NAME}:${IMAGE_TAG}"
+                sh "docker push ${IMAGE_NAME}:latest"
+            }
+        }
+
+        // ============================================================
+        // Stage 4: 更新 GitOps 部署清单
+        // ============================================================
+        // ★核心 GitOps 思想★
+        // 不是直接 kubectl set image（会被 ArgoCD 回滚），
+        // 而是修改 Git 仓库中的 deployment.yaml，然后 git push
+        // ArgoCD 检测到 Git 变更后自动同步到 K8s
+        stage('Update GitOps Manifests') {
+            steps {
+                echo "=== Stage 4: Update deployment.yaml ==="
+                sh """
+                    sed -i "s|image: ${IMAGE_NAME}:.*|image: ${IMAGE_NAME}:${IMAGE_TAG}|g" ${DEPLOY_FILE}
+                    grep 'image:' ${DEPLOY_FILE} | head -3
+                """
+            }
+        }
+
+        // ============================================================
+        // Stage 5: Git 提交 & Push
+        // ============================================================
+        stage('Git Commit & Push') {
+            steps {
+                echo "=== Stage 5: Git push ==="
+                sh """
+                    git config user.email "jenkins@cicd.local"
+                    git config user.name "Jenkins CI"
+                    git add ${DEPLOY_FILE}
+                    git diff --cached --stat
+                    git commit -m "[CI] auto: update image to ${IMAGE_TAG}
+
+                    Build: #${BUILD_NUMBER}
+                    Image: ${IMAGE_NAME}:${IMAGE_TAG}"
+                    git push origin HEAD:main
+                """
+            }
+        }
+
+        // ============================================================
+        // Stage 6: 等待 ArgoCD 自动同步
+        // ============================================================
+        // 不需要主动操作 K8s，ArgoCD 每 3 分钟自动检测 Git 变更并同步
+        stage('Wait ArgoCD Sync') {
+            steps {
+                echo "=== Stage 6: ArgoCD will auto-sync within 3min ==="
+                echo "  Verify: kubectl -n monitoring get deploy snownlp-demo"
+            }
+        }
+    }
+
+    // ---- 构建后处理 ----
+    post {
+        success {
+            echo "SUCCESS: ${IMAGE_NAME}:${IMAGE_TAG}"
+        }
+        failure {
+            echo "FAILED: Build #${BUILD_NUMBER}"
+        }
+    }
+}
+]]></script>
+    <!-- sandbox=false → 允许执行不受限制的 Groovy 脚本（生产环境注意安全） -->
+    <sandbox>false</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>

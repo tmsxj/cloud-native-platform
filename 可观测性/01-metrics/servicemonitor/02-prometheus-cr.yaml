@@ -1,0 +1,80 @@
+# P1.7: Prometheus CR — 由 Operator 管理的 Prometheus 实例
+# 替代静态 scrape_configs，改用 ServiceMonitor 自动发现
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus-managed
+  namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus-managed
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "nodes/metrics", "nodes/proxy", "services", "endpoints", "pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch"]
+- nonResourceURLs: ["/metrics", "/metrics/cadvisor"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-managed
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus-managed
+subjects:
+- kind: ServiceAccount
+  name: prometheus-managed
+  namespace: monitoring
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Prometheus
+metadata:
+  name: managed
+  namespace: monitoring
+  labels:
+    app: prometheus-managed
+spec:
+  serviceAccountName: prometheus-managed
+  serviceMonitorSelector:
+    matchLabels:
+      prometheus: managed
+  serviceMonitorNamespaceSelector: {}
+  podMonitorSelector: {}
+  probeSelector: {}
+  scrapeConfigSelector: {}
+  # 监听所有 namespace 的 ServiceMonitor
+  resources:
+    requests:
+      cpu: 200m
+      memory: 400Mi
+    limits:
+      cpu: 500m
+      memory: 800Mi
+  retention: 7d
+  storage:
+    volumeClaimTemplate:
+      spec:
+        storageClassName: local-path
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+  securityContext:
+    fsGroup: 2000
+    runAsNonRoot: true
+    runAsUser: 1000
+  # 不启用 Alertmanager（复用现有的）
+  image: quay.io/prometheus/prometheus:v3.11.3
+  imagePullPolicy: IfNotPresent
+  replicas: 1

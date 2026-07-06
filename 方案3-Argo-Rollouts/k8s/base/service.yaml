@@ -1,0 +1,18 @@
+# =============================================================================
+# Kustomize Base: Tomcat Service (复用原配置)
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: tomcat-app
+  labels:
+    app: tomcat-app
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app: tomcat-app

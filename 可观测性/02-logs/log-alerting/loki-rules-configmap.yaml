@@ -1,0 +1,43 @@
+# P1.8: Loki Alerting Rules ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-alert-rules
+  namespace: monitoring
+data:
+  loki-alert-rules.yaml: |
+    groups:
+      - name: log-error-alerts
+        rules:
+          - alert: HighErrorRate
+            expr: |
+              sum(rate({namespace=~"tomcat-.*"} |= "ERROR" [5m])) > 0.01
+            for: 5m
+            labels:
+              severity: warning
+              source: loki-logql
+            annotations:
+              summary: "Tomcat ERROR 日志频率超阈值"
+              description: "命名空间 {{ $labels.namespace }} ERROR 日志速率 {{ $value }} 条/秒"
+
+          - alert: JavaExceptionDetected
+            expr: |
+              sum(count_over_time({namespace=~"tomcat-.*"} |~ "(?i)(Exception|Error|NullPointerException)" [5m])) > 2
+            for: 5m
+            labels:
+              severity: critical
+              source: loki-logql
+            annotations:
+              summary: "Tomcat 应用检测到 Java Exception"
+              description: "命名空间 {{ $labels.namespace }} 出现 {{ $value }} 条异常日志"
+
+          - alert: OOMKillDetected
+            expr: |
+              sum(count_over_time({namespace=~".+"} |~ "(?i)(OOM|OutOfMemory|killed)" [5m])) > 0
+            for: 1m
+            labels:
+              severity: critical
+              source: loki-logql
+            annotations:
+              summary: "检测到 OOM Kill 日志"
+              description: "命名空间 {{ $labels.namespace }} 检测到内存相关错误"

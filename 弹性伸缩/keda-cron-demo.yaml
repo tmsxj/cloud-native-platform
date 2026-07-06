@@ -1,0 +1,59 @@
+# ============================================================
+# P2a.11 — KEDA Cron ScaledObject Demo
+# 部署命令: kubectl apply -f keda-cron-demo.yaml
+# 前置条件: KEDA 2.16.1 + CRDs 已安装到 keda namespace
+# 验证日期: 2026-07-05 ✅
+# ============================================================
+---
+# 1. 目标 Deployment（被 KEDA 管理伸缩）
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keda-cron-demo
+  namespace: default
+  labels:
+    app: keda-cron-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keda-cron-demo
+  template:
+    metadata:
+      labels:
+        app: keda-cron-demo
+    spec:
+      containers:
+        - name: app
+          image: 192.168.1.61/library/nginx:alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+# 2. KEDA ScaledObject — Cron 触发器
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: keda-cron-scaler
+  namespace: default
+  labels:
+    scaledobject.keda.sh/name: keda-cron-scaler
+spec:
+  scaleTargetRef:
+    name: keda-cron-demo     # 目标 Deployment
+  minReplicaCount: 1          # 非工作时间最少 1 个副本
+  maxReplicaCount: 5          # 工作时段最多 5 个副本
+  triggers:
+    - type: cron
+      metadata:
+        timezone: Asia/Shanghai          # 上海时区
+        start: "0 9 * * 1-5"             # 工作日 9:00 扩容到 desiredReplicas
+        end: "0 18 * * 1-5"             # 工作日 18:00 缩回到 minReplicas
+        desiredReplicas: "3"            # 工作时段副本数

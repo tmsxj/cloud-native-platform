@@ -1,0 +1,84 @@
+# ============================================================================
+# AlertManager 配置文件 (Webhook 版本)
+# ============================================================================
+# 功能: 接收 Prometheus 告警 → 路由分发 → Webhook 通知
+# 通知通道: Webhook (可对接企业微信/飞书/钉钉机器人)
+# 适用场景: 尚未部署 prometheus-webhook-dingtalk 翻译层时的基础配置
+#          配合 webhook-examples.md 完成 IM 通道对接
+# ============================================================================
+
+global:
+  # 告警被解决后，间隔多久再发送恢复通知
+  resolve_timeout: 5m
+
+# 路由树：根据 label 将告警分发到不同 receiver
+route:
+  # 分组依据：同 namespace + alertname 的告警合并发送
+  group_by: ['alertname', 'namespace']
+  
+  # 第一次告警到达后等待 30s，收集同组的其他告警一起发送
+  group_wait: 30s
+  
+  # 同一组已有告警触发后，间隔多久发送更新
+  group_interval: 5m
+  
+  # 同一条告警重复发送的间隔
+  repeat_interval: 4h
+  
+  # 默认接收者
+  receiver: 'webhook-default'
+  
+  # 按 severity 路由
+  routes:
+    - receiver: 'webhook-critical'
+      match:
+        severity: critical
+      continue: true
+    - receiver: 'webhook-warning'
+      match:
+        severity: warning
+      continue: true
+
+# 抑制规则：避免告警风暴
+inhibit_rules:
+  # 节点宕机时，抑制该节点上所有 Pod 级别的告警
+  - source_match:
+      alertname: 'NodeCPUCritical'
+    target_match_re:
+      alertname: 'KubePod.*'
+    equal: ['instance']
+  
+  # 节点宕机时，抑制磁盘告警
+  - source_match:
+      alertname: 'NodeCPUCritical'
+    target_match:
+      alertname: 'NodeDiskPressure'
+    equal: ['instance']
+
+receivers:
+  # 严重告警接收者
+  - name: 'webhook-critical'
+    webhook_configs:
+      # TODO: 替换为实际的 webhook 地址（企业微信/钉钉/飞书机器人）
+      - url: 'http://webhook-dummy:8080/critical'
+        send_resolved: true
+        max_alerts: 5
+
+  # 警告级别接收者
+  - name: 'webhook-warning'
+    webhook_configs:
+      # TODO: 替换为实际的 webhook 地址
+      - url: 'http://webhook-dummy:8080/warning'
+        send_resolved: true
+        max_alerts: 10
+
+  # 默认接收者（兜底）
+  - name: 'webhook-default'
+    webhook_configs:
+      # TODO: 替换为实际的 webhook 地址
+      - url: 'http://webhook-dummy:8080/default'
+        send_resolved: true
+
+# 告警通知模板（可扩展）
+templates:
+  - '/etc/alertmanager/*.tmpl'

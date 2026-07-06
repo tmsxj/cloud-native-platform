@@ -1,0 +1,92 @@
+# ============================================================================
+# AlertManager 邮件通知配置
+# ============================================================================
+# 功能: 通过 QQ邮箱 SMTP 发送告警邮件
+# 分级策略:
+#   critical → 邮件标题 [CRITICAL]，发给 email-critical 接收者
+#   warning  → 邮件标题 [WARNING]，发给 email-warning 接收者
+#   其他     → 邮件标题 [ALERT]，发给 email-default 接收者 (兜底)
+# ============================================================================
+# ⚠️ 安全警告: 此文件含邮箱授权码，切勿提交到公开 Git 仓库
+#    生产环境应将 SMTP 密码放入 K8s Secret，通过 AlertManager 的
+#    --config secret 方式挂载，或使用 External Secrets Operator
+# ⚠️ 端口说明: QQ邮箱 SMTP 使用 587 (STARTTLS)，非 465 (SSL)
+# ============================================================================
+
+global:
+  resolve_timeout: 5m              # 告警解决后 5 分钟内不发恢复通知
+  smtp_smarthost: smtp.qq.com:587  # QQ邮箱 SMTP 服务器 (STARTTLS)
+  smtp_from: tmsxj@foxmail.com     # 发件人邮箱
+  smtp_auth_username: tmsxj@foxmail.com  # SMTP 认证用户名 (通常同发件人)
+  smtp_auth_password: jraiemddtxzliife   # ⚠️ QQ邮箱授权码 (非登录密码，在 QQ邮箱→设置→账户 中生成)
+  smtp_require_tls: true           # 强制 TLS 加密传输
+
+# ============================================================================
+# 路由树: 根据 label 将告警分发到不同邮件接收者
+# ============================================================================
+route:
+  # 分组: 相同 alertname + namespace 的告警合并为一封邮件发送
+  group_by: ['alertname', 'namespace']
+  group_wait: 30s              # 首次告警后等 30s，收集同组其他告警
+  group_interval: 5m           # 同组新告警的更新间隔
+  repeat_interval: 4h          # 同一告警重复发送间隔 (避免邮件轰炸)
+  receiver: 'email-default'    # 默认接收者 (未匹配到路由规则时使用)
+  routes:
+    # Critical 级别 → 走专门 receiver
+    - receiver: 'email-critical'
+      match:
+        severity: critical
+      continue: true           # 继续匹配后续规则 (允许多 receiver)
+    # Warning 级别 → 走专门 receiver
+    - receiver: 'email-warning'
+      match:
+        severity: warning
+      continue: true
+
+# ============================================================================
+# 告警抑制规则: 防止告警风暴
+# ============================================================================
+inhibit_rules:
+  # 节点 CPU Critical 时，抑制该节点上所有 Pod 和磁盘告警
+  - source_match:
+      alertname: 'NodeCPUCritical'
+    target_match_re:
+      alertname: 'KubePod.*'
+    equal: ['instance']
+  - source_match:
+      alertname: 'NodeCPUCritical'
+    target_match:
+      alertname: 'NodeDiskPressure'
+    equal: ['instance']
+
+# ============================================================================
+# 接收者: 定义告警发往哪里
+# ============================================================================
+receivers:
+  # Critical 邮件接收者
+  - name: 'email-critical'
+    email_configs:
+      - to: tmsxj@foxmail.com          # 收件人邮箱
+        send_resolved: true            # 告警恢复后也发送通知
+        headers:
+          Subject: '[CRITICAL] {{ .GroupLabels.alertname }} - {{ .GroupLabels.namespace }}'
+
+  # Warning 邮件接收者
+  - name: 'email-warning'
+    email_configs:
+      - to: tmsxj@foxmail.com
+        send_resolved: true
+        headers:
+          Subject: '[WARNING] {{ .GroupLabels.alertname }} - {{ .GroupLabels.namespace }}'
+
+  # 默认邮件接收者 (兜底)
+  - name: 'email-default'
+    email_configs:
+      - to: tmsxj@foxmail.com
+        send_resolved: true
+        headers:
+          Subject: '[ALERT] {{ .GroupLabels.alertname }}'
+
+# 邮件内容模板 (可自定义 HTML 格式)
+templates:
+  - '/etc/alertmanager/*.tmpl'

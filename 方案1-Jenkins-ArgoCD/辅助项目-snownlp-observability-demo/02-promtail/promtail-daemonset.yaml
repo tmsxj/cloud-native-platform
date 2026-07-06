@@ -1,0 +1,91 @@
+# ============================================================
+# Promtail DaemonSet — 日志采集器
+# ============================================================
+# 部署方式: 每个节点一个 Pod，读取该节点所有日志文件推送到 Loki
+# 更新日期: 2026-06-24（新增系统日志采集路径 /var/log → /var/log/host）
+#
+# 宿主路径映射一览:
+#   /var/log/pods             → 容器内 /var/log/pods        (CRI 标准日志)
+#   /var/log                  → 容器内 /var/log/host         (系统日志, 新增)
+#   /var/lib/docker/containers → 容器内 /var/lib/docker/...  (Docker 容器日志)
+#   /run/promtail             → 容器内 /run/promtail         (positions 位置记录)
+# ============================================================
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: promtail
+  namespace: monitoring
+  labels:
+    app: promtail
+spec:
+  selector:
+    matchLabels:
+      app: promtail
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  revisionHistoryLimit: 10
+  template:
+    metadata:
+      labels:
+        app: promtail
+    spec:
+      serviceAccountName: promtail
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: promtail
+          image: ${HARBOR_IP}/monitoring/promtail:2.9.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - -config.file=/etc/promtail/promtail.yaml
+          ports:
+            - name: http
+              containerPort: 9080
+              protocol: TCP
+          # ---- 环境变量：注入节点名，用于日志 label 标记 ----
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            # 配置文件
+            - name: config
+              mountPath: /etc/promtail
+            # 读取位置记录（读写）
+            - name: run
+              mountPath: /run/promtail
+            # Docker 原始容器日志（只读）
+            - name: containers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+            # K8s Pod 日志 —— CRI 标准路径（只读）
+            - name: pods
+              mountPath: /var/log/pods
+              readOnly: true
+            # ★ 2026-06-24 新增：宿主机 /var/log 系统日志（只读）
+            # 挂载到 /var/log/host 避免和上面的 pods 路径冲突
+            - name: varlog
+              mountPath: /var/log/host
+              readOnly: true
+
+      volumes:
+        - name: config
+          configMap:
+            name: promtail-config
+        - name: run
+          hostPath:
+            path: /run/promtail
+            type: DirectoryOrCreate
+        - name: containers
+          hostPath:
+            path: /var/lib/docker/containers
+        - name: pods
+          hostPath:
+            path: /var/log/pods
+        # ★ 2026-06-24 新增
+        - name: varlog
+          hostPath:
+            path: /var/log

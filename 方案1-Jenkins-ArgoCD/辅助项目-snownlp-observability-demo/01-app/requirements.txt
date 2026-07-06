@@ -1,0 +1,9 @@
+# ============================================================
+# snownlp-demo Python 依赖
+# ============================================================
+
+fastapi>=0.100.0              # Web 框架（ASGI），提供 REST API
+uvicorn>=0.23.0               # ASGI 服务器，生产环境运行 FastAPI
+snownlp>=0.12.3               # 中文自然语言处理库，情感分析核心引擎
+prometheus_client>=0.17.0     # Prometheus 指标生成，暴露 /metrics 端点
+apache-skywalking>=1.0.1      # SkyWalking Python Agent，分布式追踪探针

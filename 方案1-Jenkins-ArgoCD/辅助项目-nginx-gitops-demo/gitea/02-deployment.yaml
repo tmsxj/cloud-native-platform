@@ -1,0 +1,114 @@
+# ============================================================
+# Gitea - 轻量级 Git 服务器 (自建 Git 仓库, SQLite 存储)
+# ============================================================
+# 作用: 为 ArgoCD GitOps 提供真实的 Git 仓库
+# 访问: http://gitea.test:${NODE_PORT}
+# ============================================================
+---
+# 管理员凭据 (首次安装时使用)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gitea-admin
+  namespace: git
+type: Opaque
+stringData:
+  username: gitops
+  password: gitops123
+  email: gitops@demo.local
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea
+  namespace: git
+  labels:
+    app: gitea
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitea
+  template:
+    metadata:
+      labels:
+        app: gitea
+    spec:
+      containers:
+        - name: gitea
+          image: ${HARBOR_IP}/library/gitea:1.22
+          ports:
+            - containerPort: 3000
+              name: http
+            - containerPort: 22
+              name: ssh
+          env:
+            # ---- 数据库: 用 SQLite (不需要外部数据库) ----
+            - name: GITEA__database__DB_TYPE
+              value: sqlite3
+            # ---- 服务配置 ----
+            - name: GITEA__server__DOMAIN
+              value: gitea.test
+            - name: GITEA__server__ROOT_URL
+              value: http://gitea.test:${NODE_PORT}
+            - name: GITEA__server__HTTP_PORT
+              value: "3000"
+            - name: GITEA__server__SSH_DOMAIN
+              value: gitea.test
+            - name: GITEA__server__DISABLE_SSH
+              value: "true"
+            # ---- 跳过首次安装向导 ----
+            - name: GITEA__security__INSTALL_LOCK
+              value: "true"
+            # ---- 管理员账户 ----
+            - name: GITEA__admin__USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-admin
+                  key: username
+            - name: GITEA__admin__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-admin
+                  key: password
+            - name: GITEA__admin__EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-admin
+                  key: email
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: gitea-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitea
+  namespace: git
+spec:
+  selector:
+    app: gitea
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+    - name: ssh
+      port: 22
+      targetPort: 22

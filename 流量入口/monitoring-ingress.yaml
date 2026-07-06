@@ -1,0 +1,73 @@
+# ============================================================
+# 监控栈 Ingress — 4 路由 + TLS + Basic Auth
+# 部署命令: kubectl apply -f monitoring-ingress.yaml
+# 前置条件: cert-manager + ClusterIssuer 已部署
+# 验证日期: 2026-07-05 ✅
+# ============================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: monitoring-ingress
+  namespace: monitoring
+  annotations:
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: monitoring-basic-auth
+    nginx.ingress.kubernetes.io/auth-realm: "Monitoring Auth Required"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - grafana.lab.local
+        - prometheus.lab.local
+        - skywalking.lab.local
+        - loki.lab.local
+      secretName: monitoring-tls-secret
+  rules:
+    # ---- Grafana 仪表盘 ----
+    - host: grafana.lab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana
+                port:
+                  number: 80
+
+    # ---- Prometheus 查询 ----
+    - host: prometheus.lab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prometheus-server
+                port:
+                  number: 80
+
+    # ---- Skywalking UI ----
+    - host: skywalking.lab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: skywalking-ui
+                port:
+                  number: 80
+
+    # ---- Loki 日志查询 (Grafana 内置，此路由备用) ----
+    - host: loki.lab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: loki
+                port:
+                  number: 3100

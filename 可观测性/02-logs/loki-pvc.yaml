@@ -1,0 +1,19 @@
+# ============================================================================
+# Loki PVC: 用于 PLG 日志存储的持久化卷声明
+# ============================================================================
+# 功能: 为 Loki 单实例提供日志持久化存储
+# 容量: 5Gi，Loki 默认使用对象存储 (S3/MinIO)，此处为本地存储方案
+# 注意: 生产环境建议使用 S3/MinIO (Loki 原生支持)，本地 PVC 仅适合 POC
+# ============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: loki-storage
+  namespace: monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: ${STORAGE_CLASS}

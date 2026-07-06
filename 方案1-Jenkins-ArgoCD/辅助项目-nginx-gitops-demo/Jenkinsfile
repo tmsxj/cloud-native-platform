@@ -1,0 +1,100 @@
+// ============================================================
+// Jenkinsfile - nginx-gitops-demo CI Pipeline
+// ============================================================
+// 完整流程:
+//   1. Checkout 代码
+//   2. 修改 ConfigMap 中的 Build 编号
+//   3. 提交并推送到 Git Daemon
+//   4. ArgoCD 自动检测并同步到 K8s
+// ============================================================
+
+pipeline {
+    agent any
+
+    environment {
+        GIT_REPO    = 'git://git-server.git.svc.cluster.local/nginx-gitops-demo.git'
+        K8S_FILE    = 'k8s/deployment.yaml'
+        BUILD_BADGE = "Build #${BUILD_NUMBER} - ${new Date().format('yyyy-MM-dd HH:mm')}"
+    }
+
+    stages {
+
+        stage('1-Checkout') {
+            steps {
+                echo "============================================"
+                echo "  GitOps Pipeline - Build #${BUILD_NUMBER}"
+                echo "  Time: ${BUILD_BADGE}"
+                echo "============================================"
+                checkout scm
+                // 如果 SCM 不可用, 手动 clone:
+                // sh "git clone ${GIT_REPO} . && git checkout master"
+            }
+        }
+
+        stage('2-Update ConfigMap') {
+            steps {
+                echo "============================================"
+                echo "  Stage: 更新 ConfigMap 中的构建信息"
+                echo "============================================"
+
+                // 替换 index.html 中的 Build 编号
+                sh """
+                    sed -i "s|Build #DEV-[0-9]*|${BUILD_BADGE}|g" ${K8S_FILE}
+                    sed -i "s|Build #[0-9]* - .*|${BUILD_BADGE}|g" ${K8S_FILE}
+                    grep 'Build #' ${K8S_FILE} || echo 'Build badge replaced'
+                """
+            }
+        }
+
+        stage('3-Git Commit & Push') {
+            steps {
+                echo "============================================"
+                echo "  Stage: 提交并推送到 Git Daemon"
+                echo "============================================"
+
+                sh """
+                    git config user.email 'jenkins@demo.local'
+                    git config user.name 'Jenkins CI'
+                    git add ${K8S_FILE}
+                    git diff --cached --stat
+                    git commit -m '[CI] Build #${BUILD_NUMBER} - ${BUILD_BADGE}' || echo 'No changes'
+                    git push origin master
+                """
+            }
+        }
+
+        stage('4-Trigger ArgoCD Refresh') {
+            steps {
+                echo "============================================"
+                echo "  Stage: 等待 ArgoCD 自动同步"
+                echo "  ArgoCD 每 3min 检测 Git 变更"
+                echo "============================================"
+
+                // 可选: 手动触发 ArgoCD 刷新 (需要 kubectl 或 argocd CLI)
+                // sh """
+                //    kubectl patch application nginx-demo -n argocd \
+                //      --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
+                // """
+
+                echo "Git push 完成. ArgoCD 将在 3min 内自动同步."
+                echo "查看状态: http://argocd.test:31716"
+                echo "访问应用: http://nginx.test:31716"
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "============================================"
+            echo "  Pipeline SUCCESS - Build #${BUILD_NUMBER}"
+            echo "  应用: http://nginx.test:31716"
+            echo "  ArgoCD: http://argocd.test:31716"
+            echo "============================================"
+        }
+        failure {
+            echo "============================================"
+            echo "  Pipeline FAILED - Build #${BUILD_NUMBER}"
+            echo "============================================"
+        }
+    }
+}

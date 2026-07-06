@@ -1,0 +1,62 @@
+# ============================================================
+# ArgoCD Application - monitoring-stack (监控基础设施)
+# ============================================================
+# 作用: 通过 ArgoCD 统一管理整套监控基础设施的部署和版本
+#
+# 包含组件:
+#   - Prometheus Server (指标采集 + 告警)
+#   - AlertManager (告警通知路由)
+#   - Grafana (可视化面板)
+#   - Loki + Promtail (日志采集与存储)
+#   - node-exporter (节点指标)
+#   - kube-state-metrics (K8s 状态指标)
+#   - pushgateway (短任务指标)
+#   - SkyWalking OAP + UI (调用链追踪)
+#
+# 部署方式:
+#   kubectl apply -f argocd/application.yaml
+#
+# 注意:
+#   - PVC/StatefulSet 已由 save-monitoring.sh 导出为 YAML
+#   - 如需完整恢复, 先用 restore-monitoring.sh 恢复 ConfigMap/Secret
+#     再用 ArgoCD 接管 Deployment/StatefulSet/DaemonSet/Service
+# ============================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-stack
+  namespace: argocd
+spec:
+  project: default
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  source:
+    # ⚠️ 部署前请修改为你的实际 Git 仓库地址
+    repoURL: https://your-git-server/monitoring-config.git
+    targetRevision: main
+    path: .                        # 根目录, ArgoCD 会扫描所有 YAML
+
+    directory:
+      recurse: true                # 递归扫描子目录
+      exclude: '{backup-*,fixes,*.sh,*.md,webhook-examples.md}'
+      # 排除: 备份快照、修复脚本、Shell 脚本、文档
+
+  syncPolicy:
+    automated:
+      prune: false                 # 监控基础设施不要自动删除 (安全)
+      selfHeal: true               # 自动修复手动修改
+      allowEmpty: false
+
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

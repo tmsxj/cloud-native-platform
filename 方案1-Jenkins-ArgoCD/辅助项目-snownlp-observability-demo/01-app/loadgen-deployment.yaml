@@ -1,0 +1,58 @@
+# ============================================================
+# snownlp-loadgen: 持续压测器
+# ============================================================
+# 与 snownlp-demo 共用同一镜像（节省存储）
+# loadgen.py 通过 ConfigMap 挂载，修改脚本无需重建镜像
+# ============================================================
+
+# ---- 压测脚本 ConfigMap ----
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loadgen-script
+  namespace: monitoring
+data:
+  loadgen.py: |
+    # 完整脚本见同目录 loadgen.py
+    # 内容: 每 1-5 秒随机发送正面/负面语料到 snownlp-demo /predict
+
+---
+# ---- 压测器 Deployment ----
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: snownlp-loadgen
+  namespace: monitoring
+  labels:
+    app: snownlp-loadgen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: snownlp-loadgen
+  template:
+    metadata:
+      labels:
+        app: snownlp-loadgen
+    spec:
+      containers:
+        - name: loadgen
+          # 复用 snownlp-demo 的镜像（包含 snownlp 库环境）
+          image: ${HARBOR_IP}/monitoring/snownlp-demo:sw-agent
+          imagePullPolicy: IfNotPresent
+          # 直接用 python3 运行（不需要 SkyWalking agent 包装）
+          command: ["python3", "/scripts/loadgen.py"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: script
+              mountPath: /scripts    # 挂载整个 scripts 目录
+      volumes:
+        - name: script
+          configMap:
+            name: loadgen-script     # 指向上面的 ConfigMap

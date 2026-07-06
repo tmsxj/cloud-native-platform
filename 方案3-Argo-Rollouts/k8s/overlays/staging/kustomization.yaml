@@ -1,0 +1,64 @@
+# STAGING Overlay: 双副本 + 蓝绿发布
+# 注意: 不使用 commonLabels (kustomize 不识 Rollout CRD，标签不会注入到 selector)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: tomcat-staging
+
+resources:
+  - ../../base
+  - namespace.yaml
+  # secret.yaml 已存在于集群，此处仅作参考模板
+  - preview-service.yaml
+
+patches:
+  - target:
+      kind: Rollout
+      name: tomcat-app
+    patch: |-
+      # 显式添加 env 标签
+      - op: add
+        path: /metadata/labels/env
+        value: "staging"
+      - op: add
+        path: /spec/template/metadata/labels/env
+        value: "staging"
+      - op: add
+        path: /spec/selector/matchLabels/env
+        value: "staging"
+      # APP_ENV 环境变量
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: APP_ENV
+          value: "staging"
+      # 蓝绿发布策略
+      - op: add
+        path: /spec/strategy
+        value:
+          blueGreen:
+            activeService: tomcat-app
+            previewService: tomcat-app-preview
+            previewReplicaCount: 1
+            autoPromotionEnabled: false
+            scaleDownDelaySeconds: 120
+  - target:
+      kind: Service
+      name: tomcat-app
+    patch: |-
+      - op: add
+        path: /metadata/labels/env
+        value: "staging"
+      - op: add
+        path: /spec/selector/env
+        value: "staging"
+  - target:
+      kind: Service
+      name: tomcat-app-preview
+    patch: |-
+      - op: add
+        path: /metadata/labels/env
+        value: "staging"
+      - op: add
+        path: /spec/selector/env
+        value: "staging"

@@ -1,0 +1,34 @@
+# ============================================================
+# Sealed Secret — Harbor 镜像拉取凭据
+# 生成命令示例:
+#   kubectl create secret docker-registry harbor-creds \
+#     --docker-server=192.168.1.61 \
+#     --docker-username=admin \
+#     --docker-password=Harbor12345 \
+#     -n tomcat-prod --dry-run=client -o json \
+#     | kubeseal --format=yaml > harbor-creds-sealed.yaml
+#
+# 验证日期: 2026-07-05 ✅
+# ============================================================
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: harbor-creds
+  namespace: tomcat-prod
+spec:
+  encryptedData:
+    .dockerconfigjson: AgA...  # kubeseal 加密后的密文
+  template:
+    type: kubernetes.io/dockerconfigjson
+    metadata:
+      name: harbor-creds
+      namespace: tomcat-prod
+---
+# 在 Deployment 中使用:
+# spec:
+#   template:
+#     spec:
+#       imagePullSecrets:
+#         - name: harbor-creds
+#       containers:
+#         - image: 192.168.1.61/library/tomcat:9

@@ -1,0 +1,7 @@
+# Kustomize Base: Rollout 通用资源清单
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - rollout.yaml
+  - service.yaml

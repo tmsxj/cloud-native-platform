@@ -1,0 +1,34 @@
+# =============================================================================
+# ArgoCD Application: tomcat-app-prod (PROD 环境, 手动触发)
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tomcat-app-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    namespace: tomcat-prod
+    server: https://kubernetes.default.svc
+  source:
+    repoURL: http://gitlab.gitlab.svc.cluster.local/root/tomcat-app.git
+    targetRevision: main
+    path: k8s/overlays/prod
+  syncPolicy:
+    # PROD 环境: 不禁用 automated，但 GitLab CI 的 deploy-prod 是 manual
+    # ArgoCD 检测到 Git 变更后仍自动同步 (selfHeal 确保生产一致)
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground

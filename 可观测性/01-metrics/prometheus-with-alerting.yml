@@ -1,0 +1,399 @@
+# ============================================================================
+# Prometheus 主配置文件
+# ============================================================================
+# 功能: 定义指标采集目标 (scrape targets) 和告警规则文件引用
+# 采集周期: scrape_interval=1m (每1分钟拉取一次指标)
+# 告警评估: evaluation_interval=1m (每1分钟检查一次告警规则)
+# 告警通道: 通过 AlertManager (cluster-local Service) 发送通知
+# ============================================================================
+
+global:
+  evaluation_interval: 1m    # 告警规则评估间隔
+  scrape_interval: 1m        # 指标采集间隔
+  scrape_timeout: 10s        # 单次采集超时
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            # AlertManager 集群内 Service 地址
+            - alertmanager.monitoring.svc.cluster.local:9093
+
+# ============================================================================
+# 采集任务列表 (共 11 个 job)
+# ============================================================================
+# 自动发现策略:
+#   1. kube-state-metrics 提供 K8s 资源对象指标 (Deployment/Pod/PVC 状态)
+#   2. node-exporter 提供节点硬件指标 (CPU/内存/磁盘/网络)
+#   3. cAdvisor 提供容器运行时指标 (容器 CPU/内存/IO)
+#   4. Pod annotation 自动发现 (prometheus.io/scrape: "true")
+#   5. Service annotation 自动发现 (prometheus.io/scrape: "true")
+# ============================================================================
+scrape_configs:
+
+# --- Job 1: Kubernetes API Server 指标 ---
+# 功能: 采集 kube-apiserver 的运行状态和请求延迟指标
+# 发现方式: 通过 endpointslice 自动发现 default/kubernetes Service
+# 安全: 使用 ServiceAccount token + CA 证书进行 HTTPS 双向认证
+- job_name: kubernetes-api-servers
+  bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+  kubernetes_sd_configs:
+  - role: endpointslice
+  relabel_configs:
+  - action: keep
+    regex: default;kubernetes;https
+    source_labels:
+    - __meta_kubernetes_namespace
+    - __meta_kubernetes_service_name
+    - __meta_kubernetes_endpointslice_port_name
+  scheme: https
+  tls_config:
+    ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+# --- Job 2: Kubernetes 节点基础指标 (通过 kubelet) ---
+# 功能: 采集每个节点的 kubelet 自身指标 (如 API 请求量、Pod 启动耗时等)
+# 发现方式: 通过 node 角色发现所有集群节点
+# 认证: 跳过 TLS 验证 (内网环境)
+- job_name: kubernetes-nodes
+  bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+  kubernetes_sd_configs:
+  - role: node
+  relabel_configs:
+  - action: labelmap
+    regex: __meta_kubernetes_node_label_(.+)
+  scheme: https
+  tls_config:
+    ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    insecure_skip_verify: true
+
+# --- Job 3: 容器资源指标 (通过 kubelet cAdvisor) ---
+# 功能: 采集容器级别的 CPU/内存/磁盘/网络指标
+# 路径: /metrics/cadvisor (kubelet 内置的 cAdvisor 端点)
+# ⚠️ 注意: kubelet 10250 端口需开放，否则此 job 全部 target down
+- job_name: kubernetes-nodes-cadvisor
+  bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+  kubernetes_sd_configs:
+  - role: node
+  metrics_path: /metrics/cadvisor
+  relabel_configs:
+  - action: labelmap
+    regex: __meta_kubernetes_node_label_(.+)
+  - source_labels:
+    - __metrics_path__
+    target_label: metrics_path
+  scheme: https
+  tls_config:
+    ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    insecure_skip_verify: true
+# --- Job 4: 应用 Pod 指标 (annotation 自动发现 — 高频) ---
+# 功能: 自动发现带 prometheus.io/scrape=true 注解的 Pod，采集应用级指标
+# 采集间隔: 1m (默认); 排除 scrape_slow 标记的 Pod
+# 使用方式: 在 Pod/Deployment 中添加 annotation 即可自动纳入监控
+#   annotations:
+#     prometheus.io/scrape: "true"      ← 必须
+#     prometheus.io/port: "8080"        ← 可选，默认 Pod IP:Port
+#     prometheus.io/path: "/metrics"   ← 可选
+- job_name: kubernetes-pods
+  honor_labels: true              # 保留原始 label，不覆盖
+  kubernetes_sd_configs:
+  - role: pod
+  relabel_configs:
+  # 只采集 annotation prometheus.io/scrape=true 的 Pod
+  - action: keep
+    regex: true
+    source_labels:
+    - __meta_kubernetes_pod_annotation_prometheus_io_scrape
+  # 排除 scrape_slow 标记的 Pod (走独立的低频采集 job)
+  - action: drop
+    regex: true
+    source_labels:
+    - __meta_kubernetes_pod_annotation_prometheus_io_scrape_slow
+  # 从 annotation 提取 scheme (http/https)
+  - action: replace
+    regex: (https?)
+    source_labels:
+    - __meta_kubernetes_pod_annotation_prometheus_io_scheme
+    target_label: __scheme__
+  # 从 annotation 提取 metrics path
+  - action: replace
+    regex: (.+)
+    source_labels:
+    - __meta_kubernetes_pod_annotation_prometheus_io_path
+    target_label: __metrics_path__
+  # 拼接目标地址: 支持 IPv6
+  - action: replace
+    regex: (\d+);(([A-Fa-f0-9]{1,4}::?){1,7}[A-Fa-f0-9]{1,4})
+    replacement: '[$2]:$1'
+    source_labels:
+    - __meta_kubernetes_pod_annotation_prometheus_io_port
+    - __meta_kubernetes_pod_ip
+    target_label: __address__
+  # 拼接目标地址: IPv4
+  - action: replace
+    regex: (\d+);((([0-9]+?)(\.|$)){4})
+    replacement: $2:$1
+    source_labels:
+    - __meta_kubernetes_pod_annotation_prometheus_io_port
+    - __meta_kubernetes_pod_ip
+    target_label: __address__
+  # 提取 annotation 参数 (如 prometheus.io/param_xxx → __param_xxx)
+  - action: labelmap
+    regex: __meta_kubernetes_pod_annotation_prometheus_io_param_(.+)
+    replacement: __param_$1
+  # 映射 Pod label 为指标 label
+  - action: labelmap
+    regex: __meta_kubernetes_pod_label_(.+)
+  # 添加 namespace 标签
+  - action: replace
+    source_labels:
+    - __meta_kubernetes_namespace
+    target_label: namespace
+  # 添加 pod 标签
+  - action: replace
+    source_labels:
+    - __meta_kubernetes_pod_name
+    target_label: pod
+  # 丢弃已终止的 Pod (避免采集失败告警)
+  - action: drop
+    regex: Pending|Succeeded|Failed|Completed
+    source_labels:
+    - __meta_kubernetes_pod_phase
+  # 添加 node 标签
+  - action: replace
+    source_labels:
+    - __meta_kubernetes_pod_node_name
+    target_label: node
+
+# --- Job 5: 应用 Pod 指标 (annotation 自动发现 — 低频) ---
+# 功能: 与 Job 4 类似，但采集间隔为 5m，适用于指标量大的慢速 endpoints
+# 触发条件: Pod annotation 中 prometheus.io/scrape_slow=true
+- job_name: kubernetes-pods-slow
+  honor_labels: true
+  kubernetes_sd_configs:
+  - role: pod
+  relabel_configs:
+  - action: keep
+    regex: true
+    source_labels:
+    - __meta_kubernetes_pod_annotation_prometheus_io_scrape_slow
+  - action: replace
+    regex: (https?)
+    source_labels:
+    - __meta_kubernetes_pod_annotation_prometheus_io_scheme
+    target_label: __scheme__
+  - action: replace
+    regex: (.+)
+    source_labels:
+    - __meta_kubernetes_pod_annotation_prometheus_io_path
+    target_label: __metrics_path__
+  - action: replace
+    regex: (\d+);(([A-Fa-f0-9]{1,4}::?){1,7}[A-Fa-f0-9]{1,4})
+    replacement: '[$2]:$1'
+    source_labels:
+    - __meta_kubernetes_pod_annotation_prometheus_io_port
+    - __meta_kubernetes_pod_ip
+    target_label: __address__
+  - action: replace
+    regex: (\d+);((([0-9]+?)(\.|$)){4})
+    replacement: $2:$1
+    source_labels:
+    - __meta_kubernetes_pod_annotation_prometheus_io_port
+    - __meta_kubernetes_pod_ip
+    target_label: __address__
+  - action: labelmap
+    regex: __meta_kubernetes_pod_annotation_prometheus_io_param_(.+)
+    replacement: __param_$1
+  - action: labelmap
+    regex: __meta_kubernetes_pod_label_(.+)
+  - action: replace
+    source_labels:
+    - __meta_kubernetes_namespace
+    target_label: namespace
+  - action: replace
+    source_labels:
+    - __meta_kubernetes_pod_name
+    target_label: pod
+  - action: drop
+    regex: Pending|Succeeded|Failed|Completed
+    source_labels:
+    - __meta_kubernetes_pod_phase
+  - action: replace
+    source_labels:
+    - __meta_kubernetes_pod_node_name
+    target_label: node
+  scrape_interval: 5m
+  scrape_timeout: 30s
+# --- Job 6: Service Endpoint 指标 (annotation 自动发现 — 高频) ---
+# 功能: 通过 Service annotation 自动发现采集目标 (比 Pod 发现更可靠)
+# 优势: 基于 Service 发现，即使 Pod IP 变化也不影响 (通过 Service 的 ClusterIP 或 EndpointSlice)
+# 触发条件: Service annotation 中 prometheus.io/scrape=true
+# 注意: 与 Job 4 (Pod 发现) 二选一即可，同时启用会导致重复采集
+- job_name: kubernetes-service-endpoints
+  honor_labels: true
+  kubernetes_sd_configs:
+  - role: endpointslice
+  relabel_configs:
+  # 只采集 annotation 标记的 Service
+  - action: keep
+    regex: true
+    source_labels:
+    - __meta_kubernetes_service_annotation_prometheus_io_scrape
+  # 排除 scrape_slow
+  - action: drop
+    regex: true
+    source_labels:
+    - __meta_kubernetes_service_annotation_prometheus_io_scrape_slow
+  - action: replace
+    regex: (https?)
+    source_labels:
+    - __meta_kubernetes_service_annotation_prometheus_io_scheme
+    target_label: __scheme__
+  - action: replace
+    regex: (.+)
+    source_labels:
+    - __meta_kubernetes_service_annotation_prometheus_io_path
+    target_label: __metrics_path__
+  # 从 __address__ 和 annotation port 拼出目标地址
+  - action: replace
+    regex: (.+?)(?::\d+)?;(\d+)
+    replacement: $1:$2
+    source_labels:
+    - __address__
+    - __meta_kubernetes_service_annotation_prometheus_io_port
+    target_label: __address__
+  - action: labelmap
+    regex: __meta_kubernetes_service_annotation_prometheus_io_param_(.+)
+    replacement: __param_$1
+  - action: labelmap
+    regex: __meta_kubernetes_service_label_(.+)
+  - action: replace
+    source_labels:
+    - __meta_kubernetes_namespace
+    target_label: namespace
+  - action: replace
+    source_labels:
+    - __meta_kubernetes_service_name
+    target_label: service
+  - action: replace
+    source_labels:
+    - __meta_kubernetes_pod_node_name
+    target_label: node
+
+# --- Job 7: Service Endpoint 指标 (annotation 自动发现 — 低频) ---
+# 功能: 与 Job 6 相同但采集间隔 5m，适用于指标量大的慢速 Service
+- job_name: kubernetes-service-endpoints-slow
+  honor_labels: true
+  kubernetes_sd_configs:
+  - role: endpointslice
+  relabel_configs:
+  - action: keep
+    regex: true
+    source_labels:
+    - __meta_kubernetes_service_annotation_prometheus_io_scrape_slow
+  - action: replace
+    regex: (https?)
+    source_labels:
+    - __meta_kubernetes_service_annotation_prometheus_io_scheme
+    target_label: __scheme__
+  - action: replace
+    regex: (.+)
+    source_labels:
+    - __meta_kubernetes_service_annotation_prometheus_io_path
+    target_label: __metrics_path__
+  - action: replace
+    regex: (.+?)(?::\d+)?;(\d+)
+    replacement: $1:$2
+    source_labels:
+    - __address__
+    - __meta_kubernetes_service_annotation_prometheus_io_port
+    target_label: __address__
+  - action: labelmap
+    regex: __meta_kubernetes_service_annotation_prometheus_io_param_(.+)
+    replacement: __param_$1
+  - action: labelmap
+    regex: __meta_kubernetes_service_label_(.+)
+  - action: replace
+    source_labels:
+    - __meta_kubernetes_namespace
+    target_label: namespace
+  - action: replace
+    source_labels:
+    - __meta_kubernetes_service_name
+    target_label: service
+  - action: replace
+    source_labels:
+    - __meta_kubernetes_pod_node_name
+    target_label: node
+  scrape_interval: 5m
+  scrape_timeout: 30s
+# --- Job 8: Blackbox 探测 (Service 健康检查) ---
+# 功能: 通过 Blackbox Exporter 对 Service 做 HTTP 探活检测
+# 原理: relabel 将目标地址发给 Blackbox Exporter (/probe)，由其发起 HTTP 请求
+# 触发条件: Service annotation 中 prometheus.io/probe=true
+# ⚠️ 前置条件: 需部署 Blackbox Exporter 并创建名为 "blackbox" 的 Service
+- job_name: kubernetes-services
+  honor_labels: true
+  kubernetes_sd_configs:
+  - role: service
+  metrics_path: /probe          # Blackbox Exporter 的探测端点
+  params:
+    module:
+    - http_2xx                  # 检测 HTTP 2xx 响应
+  relabel_configs:
+  - action: keep
+    regex: true
+    source_labels:
+    - __meta_kubernetes_service_annotation_prometheus_io_probe
+  - source_labels:
+    - __address__
+    target_label: __param_target   # 把原始地址传给 Blackbox
+  - replacement: blackbox
+    target_label: __address__      # 重定向到 Blackbox Exporter
+  - source_labels:
+    - __param_target
+    target_label: instance
+  - action: labelmap
+    regex: __meta_kubernetes_service_label_(.+)
+  - source_labels:
+    - __meta_kubernetes_namespace
+    target_label: namespace
+  - source_labels:
+    - __meta_kubernetes_service_name
+    target_label: service
+
+# --- Job 9: Prometheus 自身监控 ---
+# 功能: 采集 Prometheus Server 自身的运行指标 (TSDB 状态/采集耗时/规则评估)
+- job_name: prometheus
+  static_configs:
+  - targets:
+    - localhost:9090
+
+# --- Job 10: Pushgateway 指标 ---
+# 功能: 采集 Pushgateway 中暂存的短期任务指标 (如 CronJob 执行结果)
+# 场景: 短生命周期 Job 无法被 Prometheus 主动拉取时使用 Push 模式
+- job_name: prometheus-pushgateway
+  honor_labels: true
+  kubernetes_sd_configs:
+  - role: service
+  relabel_configs:
+  - action: keep
+    regex: pushgateway
+    source_labels:
+    - __meta_kubernetes_service_annotation_prometheus_io_probe
+
+# --- Job 11: Harbor 镜像仓库指标 ---
+# 功能: 采集 Harbor 仓库的运行状态 (项目数/镜像数/存储用量/请求量)
+# 地址: 通过 env.sh 中的 HARBOR_IP 变量注入
+- job_name: harbor
+  static_configs:
+  - targets:
+    - ${HARBOR_IP}:9090
+
+# ============================================================================
+# 告警和记录规则文件引用
+# ============================================================================
+# Prometheus 会加载这些目录下的所有 .yml/.yaml 规则文件
+rule_files:
+- /etc/config/recording_rules.yml
+- /etc/config/alerting_rules.yml
+- /etc/config/rules      # 规则目录 (可放多个文件)
+- /etc/config/alerts     # 告警目录 (可放多个文件)

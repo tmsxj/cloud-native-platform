@@ -1,0 +1,18 @@
+# STAGING 蓝绿预览 Service
+# Argo Rollouts 在蓝绿发布时会自动管理此 Service 的 selector
+# 指向新版本 Pod 供测试，验证通过后 Promote 到 activeService
+apiVersion: v1
+kind: Service
+metadata:
+  name: tomcat-app-preview
+  labels:
+    app: tomcat-app
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app: tomcat-app

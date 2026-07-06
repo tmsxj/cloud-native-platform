@@ -1,0 +1,138 @@
+# ============================================================
+# P2b.13 — Loki 多租户配置
+# 应用步骤:
+#   1. kubectl apply -f loki-config.yaml → 重启 loki-0
+#   2. kubectl apply -f promtail-config.yaml → 重启 promtail DaemonSet
+#   3. kubectl apply -f grafana-datasource.yaml → 重启 grafana
+# 验证日期: 2026-07-06 ✅
+# ============================================================
+---
+# 1. Loki ConfigMap — auth_enabled: true
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-config
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: loki
+data:
+  config.yaml: |
+    auth_enabled: true
+    server:
+      http_listen_port: 3100
+      grpc_listen_port: 9095
+    common:
+      path_prefix: /var/loki
+      storage:
+        filesystem:
+          chunks_directory: /var/loki/chunks
+          rules_directory: /var/loki/rules
+      replication_factor: 1
+      ring:
+        kvstore:
+          store: inmemory
+    schema_config:
+      configs:
+        - from: 2024-01-01
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: loki_index_
+            period: 24h
+    ingester:
+      chunk_encoding: snappy
+      max_chunk_age: 1h
+    limits_config:
+      allow_structured_metadata: true
+      ingestion_rate_mb: 50
+      ingestion_burst_size_mb: 100
+      per_stream_rate_limit: 10MB
+      per_stream_rate_limit_burst: 20MB
+      max_streams_per_user: 0
+      max_global_streams_per_user: 0
+      retention_period: 168h
+    ruler:
+      alertmanager_url: http://alertmanager.monitoring:9093
+    compactor:
+      working_directory: /var/loki/compactor
+      shared_store: filesystem
+      compaction_interval: 10m
+      retention_enabled: true
+      retention_delete_delay: 2h
+      retention_delete_worker_count: 150
+
+---
+# 2. Promtail ConfigMap — tenant_id: demo
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: promtail-config
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: promtail
+data:
+  promtail.yaml: |
+    server:
+      http_listen_port: 9080
+      grpc_listen_port: 0
+    positions:
+      filename: /run/promtail/positions.yaml
+    clients:
+      - url: http://loki.monitoring:3100/loki/api/v1/push
+        tenant_id: demo              # ← 多租户关键配置
+    scrape_configs:
+      - job_name: kubernetes-pods
+        static_configs:
+          - targets:
+              - localhost
+            labels:
+              job: kubernetes-pods
+              __path__: /var/log/pods/*/*/*.log
+        pipeline_stages:
+          - cri: {}
+          - regex:
+              expression: '^/var/log/pods/(?P<namespace>[^_]+)_(?P<pod_name>[^_]+)_(?P<pod_uid>[^/]+)/(?P<container_name>[^/]+)/'
+              source: filename
+          - labels:
+              namespace:
+              pod_name:
+              pod_uid:
+              container_name:
+          # trace_id 提取保留...
+          - regex:
+              expression: 'trace_id["'']?\s*[:=]\s*["'']?(\w+)'
+              source: message
+          - labels:
+              trace_id:
+
+---
+# 3. Grafana 数据源 — X-Scope-OrgID: demo
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: grafana
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus-server.monitoring:80
+        isDefault: true
+        editable: false
+        jsonData:
+          timeInterval: 15s
+      - name: Loki
+        type: loki
+        access: proxy
+        url: http://loki.monitoring:3100
+        editable: false
+        jsonData:
+          httpHeaderName1: X-Scope-OrgID    # ← 多租户关键配置
+        secureJsonData:
+          httpHeaderValue1: demo             # ← 租户 ID

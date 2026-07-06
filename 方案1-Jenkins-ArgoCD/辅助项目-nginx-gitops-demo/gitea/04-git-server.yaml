@@ -1,0 +1,148 @@
+# ============================================================
+# Git 服务器 (PVC + Init Job + Nginx 前端 + Git Daemon 后端)
+# ============================================================
+# 架构:
+#   Nginx (80)     → 静态页面 + 浏览仓库
+#   Git Daemon (9418) → git:// 协议, ArgoCD clone 使用
+# ============================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: git-repos
+  namespace: git
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: ${STORAGE_CLASS}
+---
+# 初始化: 创建 bare repo
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: git-init
+  namespace: git
+spec:
+  ttlSecondsAfterFinished: 60
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: init
+          image: ${HARBOR_IP}/library/jenkins:lts
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              if [ ! -d /repos/nginx-gitops-demo.git ]; then
+                cd /repos
+                git init --bare nginx-gitops-demo.git
+                echo "Git repo created"
+              else
+                echo "Git repo already exists"
+              fi
+          volumeMounts:
+            - name: repos
+              mountPath: /repos
+      volumes:
+        - name: repos
+          persistentVolumeClaim:
+            claimName: git-repos
+---
+# Git 服务器 Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: git-server
+  namespace: git
+  labels:
+    app: git-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: git-server
+  template:
+    metadata:
+      labels:
+        app: git-server
+    spec:
+      containers:
+        # ---- 容器1: Nginx 前端 (浏览器浏览 + git-push pod 操作) ----
+        - name: nginx
+          image: ${HARBOR_IP}/library/nginx:alpine
+          ports:
+            - containerPort: 80
+              name: http
+          volumeMounts:
+            - name: repos
+              mountPath: /usr/share/nginx/html
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+
+        # ---- 容器2: Git Daemon (ArgoCD clone 使用 git:// 协议) ----
+        - name: git-daemon
+          image: ${HARBOR_IP}/library/jenkins:lts
+          command:
+            - /bin/bash
+            - -c
+            - |
+              git config --global --add safe.directory /repos
+              git config --global --add safe.directory /repos/nginx-gitops-demo.git
+              echo "Starting git daemon on port 9418..."
+              echo "Serving repos from /repos"
+              git daemon \
+                --reuseaddr \
+                --base-path=/repos \
+                --export-all \
+                --enable=receive-pack \
+                --verbose \
+                --port=9418
+          ports:
+            - containerPort: 9418
+              name: git
+          volumeMounts:
+            - name: repos
+              mountPath: /repos
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+
+      volumes:
+        - name: repos
+          persistentVolumeClaim:
+            claimName: git-repos
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: git-server
+  namespace: git
+spec:
+  selector:
+    app: git-server
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: git
+      port: 9418
+      targetPort: 9418

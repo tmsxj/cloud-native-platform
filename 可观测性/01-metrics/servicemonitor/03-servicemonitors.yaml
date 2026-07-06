@@ -1,0 +1,103 @@
+# P1.7: ServiceMonitor 资源 — 自动发现 scrape targets
+# Operator 自动将匹配的 Service → Prometheus scrape config
+---
+# ============================================
+# 1. Tomcat App (P1.6 刚注入 Skywalking Agent 的应用)
+# ============================================
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: tomcat-app-agent
+  namespace: monitoring
+  labels:
+    prometheus: managed          # 匹配 Prometheus CR 的 serviceMonitorSelector
+    app: tomcat-app-agent
+spec:
+  selector:
+    matchLabels:
+      # 必须匹配 tomcat-prod namespace 中 Service 的 label
+      app: tomcat-app
+  namespaceSelector:
+    matchNames:
+    - tomcat-prod
+  endpoints:
+  - port: http
+    interval: 30s
+    path: /actuator/prometheus   # Spring Boot Actuator metrics (如果有)
+  - port: http
+    interval: 30s
+    path: /metrics               # 通用 JVM metrics 路径
+---
+# ============================================
+# 2. Kube-State-Metrics (K8s 资源状态指标)
+# ============================================
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kube-state-metrics
+  namespace: monitoring
+  labels:
+    prometheus: managed
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kube-state-metrics
+  endpoints:
+  - port: http
+    interval: 30s
+    honorLabels: true
+---
+# ============================================
+# 3. Node Exporter (节点指标)
+# ============================================
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: node-exporter
+  namespace: monitoring
+  labels:
+    prometheus: managed
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus-node-exporter
+  endpoints:
+  - port: metrics
+    interval: 30s
+---
+# ============================================
+# 4. Prometheus Operator 自身
+# ============================================
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: prometheus-operator
+  namespace: monitoring
+  labels:
+    prometheus: managed
+spec:
+  selector:
+    matchLabels:
+      app: prometheus-operator
+  endpoints:
+  - port: http
+    interval: 30s
+---
+# ============================================
+# 5. Skywalking OAP (metrics port: 1234)
+# ============================================
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: skywalking-oap
+  namespace: monitoring
+  labels:
+    prometheus: managed
+spec:
+  selector:
+    matchLabels:
+      app: skywalking
+      component: oap
+  endpoints:
+  - port: metrics
+    interval: 30s

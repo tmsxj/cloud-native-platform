@@ -1,0 +1,41 @@
+# ============================================================
+# ArgoCD Application - nginx-demo
+# ============================================================
+# 部署方式: kubectl apply -f argocd-app.yaml
+# 前提: Gitea 仓库中已有 k8s/deployment.yaml
+# 效果: ArgoCD 自动监听 Git 变化, 同步到 K8s 的 demo 命名空间
+# ============================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nginx-demo
+  namespace: argocd
+spec:
+  project: default
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: demo
+
+  # ---- Git 来源: 集群内部 Git Daemon (git:// 协议) ----
+  source:
+    repoURL: git://git-server.git.svc.cluster.local/nginx-gitops-demo.git
+    targetRevision: master
+    path: k8s
+    directory:
+      recurse: false
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

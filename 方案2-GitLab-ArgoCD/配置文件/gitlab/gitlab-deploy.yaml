@@ -1,0 +1,216 @@
+# =============================================================================
+# GitLab CE 部署配置
+# =============================================================================
+# 用途: 在 K8S 集群中部署 GitLab CE (Community Edition)
+# 命名空间: gitlab
+# 说明:
+#   - GitLab CE 包含内置的 PostgreSQL 和 Redis (适合 POC/演示环境)
+#   - 生产环境建议使用外部 PostgreSQL + Redis
+#   - 首次启动约需 3-5 分钟 (初始化数据库等)
+#   - 默认 root 密码见 GitLab 初始化文件，首次登录后需修改
+# =============================================================================
+
+---
+# ===== Namespace =====
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gitlab
+
+---
+# ===== PVC: GitLab 数据持久化 =====
+# 三个 PVC 分别存储配置、日志、应用数据
+#   1. gitlab-config (5Gi):  GitLab 配置文件 (gitlab.rb, SSH host keys 等)
+#   2. gitlab-logs  (10Gi): Nginx/Puma/PostgreSQL 日志
+#   3. gitlab-data  (30Gi): 仓库数据 + PostgreSQL 数据库 (核心数据，需定期备份)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitlab-config
+  namespace: gitlab
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi       # 配置文件较小，5Gi 足够
+  storageClassName: ${STORAGE_CLASS}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitlab-logs
+  namespace: gitlab
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi      # 日志量取决于 CI/CD 流水线频率
+  storageClassName: ${STORAGE_CLASS}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitlab-data
+  namespace: gitlab
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 30Gi      # ★ 核心数据卷: 代码仓库 + 数据库，需最大容量
+  storageClassName: ${STORAGE_CLASS}
+
+---
+# ===== Service: GitLab 集群内访问 (HTTP + SSH) =====
+# DNS: gitlab.gitlab.svc.cluster.local
+# 用途: 集群内其他 Pod (如 GitLab Runner) 通过此 Service 访问 GitLab
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitlab
+  namespace: gitlab
+  labels:
+    app: gitlab
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
+    - name: ssh
+      port: 22
+      targetPort: 22          # Git SSH clone (git clone git@...)
+      protocol: TCP
+  selector:
+    app: gitlab
+
+---
+# ===== NodePort Service: 集群外访问 GitLab Web UI =====
+# 端口: 31080 (固定 NodePort)
+# 用途: 开发者在浏览器中通过 http://${GITLAB_DOMAIN}:31080 访问 GitLab
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitlab-nodeport
+  namespace: gitlab
+  labels:
+    app: gitlab
+spec:
+  type: NodePort
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      nodePort: 31080
+      protocol: TCP
+  selector:
+    app: gitlab
+
+---
+# ===== Deployment: GitLab CE 单实例 =====
+# 镜像: gitlab-ce:16.11.0 (企业版功能更完整的社区版本)
+# 资源: ~2Gi 内存 + 1 CPU 核心 (POC 最低配置)
+# 启动时间: 首次约 3-5 分钟 (数据库初始化/迁移)
+# 注意: 生产环境建议使用外部 PostgreSQL + Redis，本配置为全内置方案
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitlab
+  namespace: gitlab
+  labels:
+    app: gitlab
+spec:
+  replicas: 1               # GitLab CE 不支持多副本 (内置 PostgreSQL)
+  selector:
+    matchLabels:
+      app: gitlab
+  template:
+    metadata:
+      labels:
+        app: gitlab
+    spec:
+      containers:
+        - name: gitlab
+          image: ${HARBOR_IP}/library/gitlab-ce:16.11.0
+          imagePullPolicy: IfNotPresent
+          env:
+            # ---- GitLab Omnibus 配置 (通过环境变量注入) ----
+            # external_url 决定 GitLab 生成的 Clone URL、Webhook URL 等
+            - name: GITLAB_OMNIBUS_CONFIG
+              value: |
+                external_url 'http://${GITLAB_DOMAIN}'
+                # 禁用内置监控 (节省约 500Mi 内存)
+                prometheus_monitoring['enable'] = false
+                alertmanager['enable'] = false
+                grafana['enable'] = false
+                # 禁用不用的组件 (节省内存)
+                gitlab_kas['enable'] = false         # Kubernetes Agent Server
+                gitlab_pages['enable'] = false       # GitLab Pages 静态站点
+                # 限制 Worker 数量以节省内存
+                puma['worker_processes'] = 1         # Web 服务器进程数
+                sidekiq['max_concurrency'] = 10      # 后台任务并发数
+                postgresql['shared_buffers'] = "256MB" # PG 缓存 (默认 1GB)
+            # SSH 主机密钥 — 固定密钥避免重启后变化
+            # 如果 SSH host key 变化，客户端会报警告，需要手动确认
+            - name: SSH_HOST_KEY_FORCE_GENERATE
+              value: "false"
+          ports:
+            - containerPort: 80
+              name: http
+              protocol: TCP
+            - containerPort: 22
+              name: ssh
+              protocol: TCP
+          # ---- 健康检查 (GitLab 启动慢，需要耐心等待) ----
+          # 注: 不能用 httpGet + Host header, K8s 不支持设置 Host 头
+          # 改用 exec 探针在容器内 wget 带 Host 头
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "wget -q -O- --header='Host: ${GITLAB_DOMAIN}' http://127.0.0.1/-/health"
+            initialDelaySeconds: 300   # 首次启动约 3-5 分钟
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 10
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "wget -q -O- --header='Host: ${GITLAB_DOMAIN}' http://127.0.0.1/-/health"
+            initialDelaySeconds: 360
+            periodSeconds: 60
+            timeoutSeconds: 10
+            failureThreshold: 6
+          # ---- 资源限制 ----
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "1000m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+          # ---- 持久化挂载 ----
+          volumeMounts:
+            - name: config
+              mountPath: /etc/gitlab
+            - name: logs
+              mountPath: /var/log/gitlab
+            - name: data
+              mountPath: /var/opt/gitlab
+      # ---- 存储卷 ----
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: gitlab-config
+        - name: logs
+          persistentVolumeClaim:
+            claimName: gitlab-logs
+        - name: data
+          persistentVolumeClaim:
+            claimName: gitlab-data

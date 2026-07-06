@@ -1,0 +1,59 @@
+# DEV Overlay: 单副本 + 金丝雀发布
+# 注意: 不使用 commonLabels (kustomize 不识 Rollout CRD，标签不会注入到 selector)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: tomcat-dev
+
+resources:
+  - ../../base
+  - namespace.yaml
+  # secret.yaml 已存在于集群，此处仅作参考模板
+
+patches:
+  - target:
+      kind: Rollout
+      name: tomcat-app
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      # 显式添加 env 标签到 Pod Template 和 Selector
+      - op: add
+        path: /metadata/labels/env
+        value: "dev"
+      - op: add
+        path: /spec/template/metadata/labels/env
+        value: "dev"
+      - op: add
+        path: /spec/selector/matchLabels/env
+        value: "dev"
+      # APP_ENV 环境变量
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: APP_ENV
+          value: "dev"
+      # 金丝雀发布策略
+      - op: add
+        path: /spec/strategy
+        value:
+          canary:
+            steps:
+              - setWeight: 20
+              - pause:
+                  duration: 60s
+              - setWeight: 40
+              - pause:
+                  duration: 60s
+              - setWeight: 100
+  - target:
+      kind: Service
+      name: tomcat-app
+    patch: |-
+      - op: add
+        path: /metadata/labels/env
+        value: "dev"
+      - op: add
+        path: /spec/selector/env
+        value: "dev"

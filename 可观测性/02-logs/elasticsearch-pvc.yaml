@@ -1,0 +1,19 @@
+# ============================================================================
+# Elasticsearch PVC: 用于 EFK 日志存储的持久化卷声明
+# ============================================================================
+# 功能: 为 Elasticsearch StatefulSet 提供持久化存储
+# 容量: 10Gi，适合中小规模日志 (建议按 1Gi/天 的日志量放 7-10 天)
+# 扩展: 日志量增长后可扩容 PVC 或使用 ILM (Index Lifecycle Management) 自动清理
+# ============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: elasticsearch-data
+  namespace: monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: ${STORAGE_CLASS}

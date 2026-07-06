@@ -1,0 +1,49 @@
+# =============================================================================
+# ArgoCD Application: tomcat-app
+# =============================================================================
+# 用途: 定义 ArgoCD 如何监听 GitLab 仓库并同步到 K8S
+# 命名空间: argocd (复用方案1的 ArgoCD 实例)
+# 部署目标: tomcat-demo 命名空间
+# =============================================================================
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tomcat-app
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # ---- 部署目标 ----
+  destination:
+    namespace: tomcat-demo
+    server: https://kubernetes.default.svc
+  
+  # ---- Git 仓库配置 ----
+  source:
+    # GitLab 仓库地址 (HTTP 协议)
+    repoURL: http://gitlab.gitlab.svc.cluster.local/root/tomcat-app.git
+    # Git 分支
+    targetRevision: main
+    # 监听路径: k8s/ 目录下的所有清单文件
+    path: k8s/
+  
+  # ---- 同步策略 ----
+  syncPolicy:
+    # 自动同步
+    automated:
+      # 删除 Git 中的文件 → 自动删除 K8S 资源
+      prune: true
+      # 手动修改 K8S 资源 → 自动回滚到 Git 定义的状态
+      selfHeal: true
+    # 重试配置
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+    # 同步选项
+    syncOptions:
+      - CreateNamespace=true       # 自动创建 tomcat-demo 命名空间
+      - PrunePropagationPolicy=foreground

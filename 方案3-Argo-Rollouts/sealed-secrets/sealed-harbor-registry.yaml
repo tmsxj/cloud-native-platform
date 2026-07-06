@@ -1,0 +1,26 @@
+# ============================================================================
+# 示例: 加密后的 SealedSecret (可直接提交 Git，安全)
+# 
+# 这是用 kubeseal 加密 example-secret.yaml 后的预期输出格式。
+# 实际使用时通过 kubeseal 生成，不要手写。
+# ============================================================================
+# 生成命令:
+#   kubeseal --controller-name=sealed-secrets-controller \
+#            --controller-namespace=kube-system \
+#            < example-secret.yaml > sealed-harbor-registry.yaml
+# ============================================================================
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: harbor-registry
+  namespace: tomcat-dev
+  annotations:
+    sealedsecrets.bitnami.com/managed: "true"
+spec:
+  encryptedData:
+    .dockerconfigjson: AgABBBBB...encrypted_base64_content_here...XXXXX==
+  template:
+    metadata:
+      name: harbor-registry
+      namespace: tomcat-dev
+    type: kubernetes.io/dockerconfigjson

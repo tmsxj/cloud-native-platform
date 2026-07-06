@@ -1,0 +1,159 @@
+# =============================================================================
+# GitLab Runner 部署配置 (dind 模式，参考 Jenkins 方案)
+# =============================================================================
+# 用途: 在 K8S 集群中部署 GitLab Runner，执行 CI/CD 流水线中的 Job
+# 命名空间: gitlab
+#
+# 架构说明:
+#   - GitLab Runner (主容器) + Docker-in-Docker (sidecar)
+#   - Runner 通过 tcp://localhost:2375 连接 dind 守护进程
+#   - initContainer 等待 GitLab 就绪后自动注册 Runner
+#   - dind 使用 privileged 模式 (K8s 节点无 Docker 时的必需方案)
+#
+# ⚠️ 安全警告:
+#   1. privileged: true 存在容器逃逸风险，生产环境建议使用
+#      Kubernetes Executor (而非 Docker Executor) 来避免
+#   2. registration-token 为明文存储，生产环境应使用
+#      External Secrets 或 Sealed Secrets 加密管理
+# ⚠️ 注意: 此配置依赖节点有 Docker 镜像层缓存，首次拉取较慢
+# =============================================================================
+
+---
+# ===== ServiceAccount =====
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitlab-runner
+  namespace: gitlab
+
+---
+# ===== Role: Runner 需要的权限 =====
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gitlab-runner
+  namespace: gitlab
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/exec", "pods/log", "secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+# ===== RoleBinding =====
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gitlab-runner
+  namespace: gitlab
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gitlab-runner
+subjects:
+  - kind: ServiceAccount
+    name: gitlab-runner
+    namespace: gitlab
+
+---
+# ===== Secret: Runner Registration Token =====
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gitlab-runner-secret
+  namespace: gitlab
+type: Opaque
+stringData:
+  registration-token: "vqx8TpLLt7Z3bcPgKD6R"
+
+---
+# ===== Deployment: GitLab Runner + dind =====
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitlab-runner
+  namespace: gitlab
+  labels:
+    app: gitlab-runner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitlab-runner
+  template:
+    metadata:
+      labels:
+        app: gitlab-runner
+    spec:
+      serviceAccountName: gitlab-runner
+      # ---- InitContainer: 等待 GitLab 就绪 (使用 alpine 镜像) ----
+      initContainers:
+        - name: wait-for-gitlab
+          image: ${HARBOR_IP}/library/alpine:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              echo "=== 等待 GitLab 就绪 ==="
+              for i in $(seq 1 90); do
+                CODE=$(wget -q -O- --header='Host: ${GITLAB_DOMAIN}' --server-response http://gitlab.gitlab.svc.cluster.local/ 2>&1 | grep 'HTTP/' | awk '{print $2}')
+                if [ "$CODE" = "200" ] || [ "$CODE" = "302" ]; then
+                  echo "GitLab 已就绪, HTTP $CODE (尝试次数: $i)"
+                  exit 0
+                fi
+                echo "等待中... ($i/90)"
+                sleep 5
+              done
+              echo "超时: GitLab 未就绪"
+              exit 1
+
+      # ---- 主容器 ----
+      containers:
+        # Container 1: GitLab Runner 服务
+        - name: gitlab-runner
+          image: ${HARBOR_IP}/library/gitlab_gitlab-runner:alpine-v17.9.1
+          command: ["gitlab-runner", "run", "--working-directory=/home/gitlab-runner"]
+          env:
+            - name: DOCKER_HOST
+              value: tcp://localhost:2375
+          volumeMounts:
+            - name: runner-config
+              mountPath: /etc/gitlab-runner
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+        # Container 2: Docker-in-Docker 守护进程
+        - name: dind
+          image: ${HARBOR_IP}/library/docker:24-dind
+          args:
+            - "--insecure-registry=${HARBOR_IP}"
+          env:
+            - name: DOCKER_TLS_CERTDIR
+              value: ""
+          securityContext:
+            privileged: true
+          ports:
+            - containerPort: 2375
+              name: docker
+              protocol: TCP
+          volumeMounts:
+            - name: docker-storage
+              mountPath: /var/lib/docker
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1"
+
+      # ---- 存储卷 ----
+      volumes:
+        - name: runner-config
+          emptyDir: {}
+        - name: docker-storage
+          emptyDir: {}

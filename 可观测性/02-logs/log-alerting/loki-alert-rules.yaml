@@ -1,0 +1,50 @@
+# P1.8: Loki LogQL 告警规则
+# Loki Ruler 自动读取此目录下的规则文件
+# 告警发送到: Alertmanager (http://alertmanager.monitoring:9093)
+---
+groups:
+  - name: log-error-alerts
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum(rate({namespace=~"tomcat-.*"} |= "ERROR" [5m])) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          source: loki-logql
+        annotations:
+          summary: "Tomcat ERROR 日志频率超阈值"
+          description: "命名空间 {{ $labels.namespace }} 过去5分钟 ERROR 日志速率 {{ $value }} 条/秒，超过 0.01 阈值"
+
+      - alert: JavaExceptionDetected
+        expr: |
+          sum(count_over_time({namespace=~"tomcat-.*"} |~ "(?i)(Exception|Error|FATAL|NullPointerException|IllegalArgumentException)" [5m])) > 2
+        for: 5m
+        labels:
+          severity: critical
+          source: loki-logql
+        annotations:
+          summary: "Tomcat 应用检测到 Java Exception"
+          description: "命名空间 {{ $labels.namespace }} 过去5分钟出现 {{ $value }} 条 Exception/Error 日志，超过阈值"
+
+      - alert: PodRestartSpike
+        expr: |
+          sum(count_over_time({namespace=~"tomcat-.*"} |= "restarted" [10m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+          source: loki-logql
+        annotations:
+          summary: "检测到 Pod 重启日志"
+          description: "命名空间 {{ $labels.namespace }} 检测到 Pod 重启相关日志"
+
+      - alert: OOMKillDetected
+        expr: |
+          sum(count_over_time({namespace=~"tomcat-.*"} |~ "(?i)(OOM|OutOfMemory|killed)" [5m])) > 0
+        for: 1m
+        labels:
+          severity: critical
+          source: loki-logql
+        annotations:
+          summary: "检测到 OOM Kill 日志"
+          description: "命名空间 {{ $labels.namespace }} 检测到 OOM/OutOfMemory 相关日志，Pod 可能被杀死"

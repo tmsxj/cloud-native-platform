@@ -1,0 +1,189 @@
+# ============================================================
+# P2a.14 — NFS Dynamic Provisioner 完整部署
+# 部署命令: kubectl apply -f nfs-provisioner.yaml
+# 前置条件: h1:/srv/nfs-k8s 目录存在且可 NFS 挂载
+# 验证日期: 2026-07-05 ✅
+# ============================================================
+---
+# 1. ServiceAccount + RBAC
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nfs-provisioner
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nfs-provisioner-runner
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "update"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nfs-provisioner-runner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nfs-provisioner-runner
+subjects:
+  - kind: ServiceAccount
+    name: nfs-provisioner
+    namespace: kube-system
+---
+# 2. Provisioner 脚本 (ConfigMap)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nfs-provisioner-script
+  namespace: kube-system
+data:
+  provision.sh: |
+    #!/bin/bash
+    # NFS Dynamic Provisioner
+    NFS_SERVER="192.168.1.61"
+    NFS_PATH="/srv/nfs-k8s"
+    SC_NAME="nfs-client"
+
+    echo "==================================="
+    echo "NFS Dynamic Provisioner Started"
+    echo "NFS Server : $NFS_SERVER"
+    echo "NFS Path   : $NFS_PATH"
+    echo "SC Name    : $SC_NAME"
+    echo "==================================="
+
+    while true; do
+      pending_pvcs=$(kubectl get pvc -A -o jsonpath='{range .items[*]}{.metadata.namespace}{"|"}{.metadata.name}{"|"}{.spec.storageClassName}{"|"}{.metadata.uid}{"|"}{.status.phase}{"\n"}{end}' 2>/dev/null)
+
+      echo "$pending_pvcs" | while IFS="|" read ns name sc uid phase; do
+        [ -z "$ns" ] && continue
+        [ "$sc" != "$SC_NAME" ] && continue
+        [ "$phase" != "Pending" ] && continue
+
+        pv_name="nfs-${ns}-${name}"
+        pv_path="${NFS_PATH}/${ns}-${name}"
+        local_path="/nfs-root/${ns}-${name}"
+
+        if kubectl get pv "$pv_name" >/dev/null 2>&1; then
+          continue
+        fi
+
+        ts=$(date +%H:%M:%S)
+        echo "[$ts] Creating NFS dir: $local_path"
+        mkdir -p "$local_path" 2>/dev/null
+
+        echo "[$ts] Creating PV $pv_name for $ns/$name"
+
+        kubectl apply -f - <<YAML
+    apiVersion: v1
+    kind: PersistentVolume
+    metadata:
+      name: $pv_name
+      labels:
+        provisioned-by: nfs-provisioner
+    spec:
+      accessModes:
+        - ReadWriteMany
+      capacity:
+        storage: 5Gi
+      nfs:
+        path: $pv_path
+        server: $NFS_SERVER
+      persistentVolumeReclaimPolicy: Delete
+      storageClassName: $SC_NAME
+      claimRef:
+        apiVersion: v1
+        kind: PersistentVolumeClaim
+        name: $name
+        namespace: $ns
+        uid: $uid
+      mountOptions:
+        - nfsvers=4.1
+        - hard
+        - timeo=600
+    YAML
+
+        echo "[$ts] PV $pv_name created -> $NFS_SERVER:$pv_path"
+      done
+
+      sleep 30
+    done
+---
+# 3. Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nfs-provisioner
+  namespace: kube-system
+  labels:
+    app: nfs-provisioner
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: nfs-provisioner
+  template:
+    metadata:
+      labels:
+        app: nfs-provisioner
+    spec:
+      serviceAccountName: nfs-provisioner
+      nodeSelector:
+        kubernetes.io/hostname: worker1   # worker1 可挂载 NFS
+      containers:
+        - name: provisioner
+          image: 192.168.1.61/library/bitnami_kubectl:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "/scripts/provision.sh"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+            - name: nfs-root
+              mountPath: /nfs-root
+      volumes:
+        - name: script
+          configMap:
+            name: nfs-provisioner-script
+            defaultMode: 0755
+        - name: nfs-root
+          nfs:
+            server: 192.168.1.61
+            path: /srv/nfs-k8s
+---
+# 4. StorageClass
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nfs-client
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: nfs-provisioner
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+mountOptions:
+  - nfsvers=4.1
+  - hard
+  - timeo=600
+parameters:
+  server: "192.168.1.61"
+  path: "/srv/nfs-k8s"
+  archiveOnDelete: "true"

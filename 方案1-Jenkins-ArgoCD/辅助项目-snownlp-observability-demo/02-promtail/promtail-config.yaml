@@ -1,0 +1,135 @@
+# ============================================================
+# Promtail 日志采集配置
+# ============================================================
+# 部署方式: DaemonSet（每个节点一个 Pod，读取该节点所有容器日志）
+# 角色: 日志采集器 —— 读取 /var/log/pods，解析后推送到 Loki
+# 注意: 更新 ConfigMap 后需要 rollout restart daemonset/promtail
+# ============================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: promtail-config
+  namespace: monitoring
+data:
+  promtail.yaml: |
+    # ---- 自身运行配置 ----
+    server:
+      http_listen_port: 9080     # Promtail 健康检查端口
+      grpc_listen_port: 0        # 关闭 gRPC（单机环境不需要）
+
+    # ---- 文件读取位置记录 ----
+    # 记录每个日志文件读到哪了，重启后不重复采集
+    positions:
+      filename: /run/promtail/positions.yaml
+
+    # ---- 日志推送目标 ----
+    clients:
+      - url: http://loki.monitoring:3100/loki/api/v1/push
+        # Loki 的 push API 地址，Promtail 将解析后的日志批量推送至此
+
+    # ============================================================
+    # 日志采集规则
+    # ============================================================
+    scrape_configs:
+      - job_name: kubernetes-pods
+        static_configs:
+          - targets:
+              - localhost
+            labels:
+              job: kubernetes-pods
+              # 通配所有 Pod 的日志文件
+              # 路径格式: /var/log/pods/<namespace>_<pod>_<uid>/<container>/<n>.log
+              __path__: /var/log/pods/*/*/*.log
+
+        # ============================================================
+        # Pipeline 阶段（按顺序执行，每个阶段处理上阶段的输出）
+        # ============================================================
+        pipeline_stages:
+
+          # 阶段1: 解析 CRI 容器运行时日志格式
+          # CRI 格式: TIMESTAMP STREAM TAG CONTENT
+          # 例: 2026-06-23T11:36:37.123 stdout F {"time": "..."}
+          # 处理后: stdout 被移除，只保留原始日志内容
+          - cri: {}
+
+          # 阶段2: 从文件路径提取 K8s 元数据
+          # ============================================================
+          # 【关键设计】source: filename
+          # 为什么从 filename 提取而不是从日志内容提取？
+          # → 日志内容格式可能因应用而异，但文件路径格式是固定的
+          # → 保证元数据在任何日志格式下都能被正确提取
+          #
+          # 文件路径结构:
+          #   /var/log/pods/monitoring_snownlp-demo_abc123.../app/0.log
+          #                      ↑ns↑     ↑pod_name↑    ↑uid↑  ↑container↑
+          # ============================================================
+          - regex:
+              expression: '^/var/log/pods/(?P<namespace>[^_]+)_(?P<pod_name>[^_]+)_(?P<pod_uid>[^/]+)/(?P<container_name>[^/]+)/'
+              source: filename       # 【关键】从文件名路径提取，而非日志内容
+          - labels:
+              namespace:             # 提升为 Loki label —— 用于日志查询过滤
+              pod_name:              # 提升为 Loki label —— 注意含随机 uid，查询用 =~
+              pod_uid:               # 内部使用
+              container_name:        # 区分 init/app/sidecar 容器
+
+          # 阶段3: 从日志内容提取 trace_id
+          # ============================================================
+          # 【核心】这是整个可观测性链路的关键环节
+          # 从日志行中提取 trace_id 并提升为 Loki label，
+          # 后续 Grafana derivedFields 通过此 label 构造 SkyWalking 跳转链接
+          #
+          # 支持格式（大小写不敏感）:
+          #   trace_id=aa5e61a26efa11f18f1bba87a413a4b2    ← 我们的应用格式
+          #   traceId=aa5e61a26efa11f18f1bba87a413a4b2     ← 驼峰变体
+          #   [TID:aa5e61a26efa11f18f1bba87a413a4b2]       ← SkyWalking Java 格式
+          # ============================================================
+          - regex:
+              expression: '(?:TID[=:\s]*|trace[idI][dD][=:\s]*|trace_id[=:\s]*)(?P<trace_id>[A-Za-z0-9+/=._-]+)'
+          - labels:
+              trace_id:              # 提升为 Loki label，供 Grafana derivedFields 使用
+
+      # ============================================================
+      # 系统日志采集（2026-06-24 新增）
+      # ============================================================
+      # 目的：覆盖基础设施层日志，不只看业务日志
+      # 挂载：DaemonSet 新增 hostPath /var/log → /var/log/host (readOnly)
+      # 注意：kubelet/containerd 在 systemd 系统中走 journald，
+      #       文件采不到，需配合 journald stage（见文档说明）
+      # ============================================================
+
+      # ---- Job 2: 主机系统日志 ----
+      # 采集 /var/log/messages (RHEL/CentOS) 和 /var/log/syslog (Ubuntu/Debian)
+      # 包含：内核消息、systemd 服务日志、sshd 登录记录、OOM killer 等
+      - job_name: host-logs
+        static_configs:
+          - targets:
+              - localhost
+            labels:
+              job: host-logs
+              log_source: host-system
+              __path__: /var/log/host/{messages,syslog}
+
+      # ---- Job 3: kubelet 日志（文件模式）----
+      # 部分发行版 kubelet 会额外写一份文件日志
+      # kubeadm 默认走 journald，本 job 为兜底采集
+      - job_name: kubelet-logs
+        static_configs:
+          - targets:
+              - localhost
+            labels:
+              job: kubelet-logs
+              log_source: kube-node
+              __path__: /var/log/host/kubelet*.log
+
+      # ---- Job 4: 容器运行时日志（Docker daemon）----
+      # Docker 自身运行日志，非容器 stdout/stderr
+      # 对排查 Docker 自身故障（如镜像拉取失败）很有价值
+      - job_name: docker-daemon-logs
+        static_configs:
+          - targets:
+              - localhost
+            labels:
+              job: docker-daemon-logs
+              log_source: container-runtime
+              # Docker daemon 日志位置因发行版而异
+              __path__: /var/log/host/docker*.log

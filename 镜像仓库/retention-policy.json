@@ -1,0 +1,42 @@
+{
+  "algorithm": "or",
+  "rules": [
+    {
+      "action": "retain",
+      "template": "always",
+      "scope_selectors": {
+        "repository": [
+          {
+            "pattern": "**",
+            "decoration": "repoMatches"
+          }
+        ]
+      }
+    },
+    {
+      "action": "retain",
+      "template": "latestPushedK",
+      "params": {
+        "latestPushedK": 10
+      },
+      "scope_selectors": {
+        "repository": [
+          {
+            "pattern": "**",
+            "decoration": "repoMatches"
+          }
+        ]
+      }
+    }
+  ],
+  "trigger": {
+    "kind": "Schedule",
+    "settings": {
+      "cron": "0 3 * * *"
+    }
+  },
+  "scope": {
+    "level": "project",
+    "ref": "monitoring"
+  }
+}

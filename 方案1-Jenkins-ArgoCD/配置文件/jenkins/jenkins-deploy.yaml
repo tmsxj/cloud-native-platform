@@ -1,0 +1,231 @@
+# ============================================================================
+# Jenkins 全栈部署文件
+# ============================================================================
+# 功能: 在内网 K8s 集群中部署 Jenkins CI 服务器
+# 架构:
+#   ┌─────────────────────────────────────────────────────┐
+#   │              Jenkins Pod                            │
+#   │  ┌─────────────────────────────────────────────┐    │
+#   │  │  Jenkins Master (:8080 Web, :50000 Agent)   │    │
+#   │  │  - JAVA_OPTS: 跳过设置向导                   │    │
+#   │  │  - ServiceAccount: jenkins (有 K8s RBAC)    │    │
+#   │  └─────────────────────────────────────────────┘    │
+#   │  挂载:                                               │
+#   │  - /var/jenkins_home → PVC (jenkins-data, 10Gi)     │
+#   │  - /var/run/docker.sock → 宿主机 Docker Socket      │
+#   └─────────────────────────────────────────────────────┘
+#   ┌──────────────────────┐
+#   │  Ingress (nginx)     │
+#   │  jenkins.test → :8080│
+#   └──────────────────────┘
+#
+# 关键设计决策:
+#   1. 挂载宿主机 docker.sock → Jenkins Agent 可直接构建 Docker 镜像
+#   2. ClusterRole 高权限 → Jenkins 可管理 K8s 资源（创建 Pod/Deploy 等）
+#   3. JAVA_OPTS 跳过向导 → 无头启动，无需手动 Unlock Jenkins
+#
+# 前置依赖:
+#   1. StorageClass "local-path" 已存在
+#   2. 镜像 ${HARBOR_IP}/library/jenkins:lts 已推送到 Harbor
+#   3. 命名空间 "jenkins" 已创建: kubectl create namespace jenkins
+#   4. Ingress Controller (nginx) 已部署
+#   5. 宿主机已安装 Docker，且 docker.sock 存在
+# ============================================================================
+
+---
+# =====================================================================
+# PVC: Jenkins 数据持久化
+# =====================================================================
+# 说明: 存储 Jenkins 所有数据（Job 配置、构建历史、插件等）
+# 重要: 如果 PVC 被删除，所有 Jenkins 配置将丢失！
+#       建议定期备份此 PVC 或使用 Velero 等工具
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jenkins-data
+  namespace: jenkins
+spec:
+  accessModes:
+    - ReadWriteOnce       # ← 单节点（Jenkins 单副本）
+  resources:
+    requests:
+      storage: 10Gi       # ← 存储构建日志、插件、workspace
+  storageClassName: ${STORAGE_CLASS}  # ← 替换为你的 StorageClass
+
+---
+# =====================================================================
+# ServiceAccount: Jenkins 的身份凭证
+# =====================================================================
+# 说明: 后续通过 ClusterRoleBinding 赋予此 SA K8s 集群管理权限
+#       这样 Jenkins Pipeline 中就能直接执行 kubectl 操作
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jenkins
+  namespace: jenkins
+
+---
+# =====================================================================
+# ClusterRole: Jenkins 的集群操作权限
+# =====================================================================
+# 说明: 定义 Jenkins 可以操作的 K8s 资源类型和动作
+# 危险: 这里给了较高权限（创建/删除 Pod、Deployment 等）
+#       生产环境建议限制到最小范围（如只操作 monitoring 命名空间）
+# 为什么需要高权限:
+#   - Jenkins Pipeline 需要创建临时 Agent Pod
+#   - 需要读取其他命名空间的资源（如验证部署状态）
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: jenkins
+rules:
+  # ---- 核心资源 ----
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "configmaps", "secrets", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # ---- 工作负载资源 ----
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # ---- 网络资源 ----
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # ---- 批处理资源 ----
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+# =====================================================================
+# ClusterRoleBinding: 绑定 SA 和 ClusterRole
+# =====================================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: jenkins
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jenkins
+subjects:
+  - kind: ServiceAccount
+    name: jenkins
+    namespace: jenkins
+
+---
+# =====================================================================
+# Jenkins Deployment (单容器 + 双挂载)
+# =====================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jenkins
+  namespace: jenkins
+spec:
+  replicas: 1               # ← Jenkins 单副本（Master 不支持水平扩展）
+  selector:
+    matchLabels:
+      app: jenkins
+  template:
+    metadata:
+      labels:
+        app: jenkins
+    spec:
+      serviceAccountName: jenkins   # ← 使用上面创建的 SA（拥有 K8s RBAC 权限）
+
+      containers:
+        - name: jenkins
+          image: ${HARBOR_IP}/library/jenkins:lts   # ← 内网 Harbor 镜像
+          ports:
+            - containerPort: 8080
+              name: http       # ← Web UI 端口
+            - containerPort: 50000
+              name: agent      # ← JNLP Agent 通信端口
+
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"    # ← 构建大型项目时可能需要更多内存
+              cpu: "2000m"
+
+          env:
+            # ---- 关键环境变量 ----
+            # 跳过 Jenkins 初始化设置向导（无头启动）
+            # 如果不设置这个，首次访问需要 Unlock Jenkins 输入密码
+            - name: JAVA_OPTS
+              value: "-Djenkins.install.runSetupWizard=false -Xms512m -Xmx1024m"
+
+          volumeMounts:
+            # ---- 挂载 1: Jenkins 数据目录 ----
+            - name: jenkins-data
+              mountPath: /var/jenkins_home    # ← Jenkins 家目录（所有配置、Job 都在这里）
+            # ---- 挂载 2: Docker Socket（关键！）----
+            # 作用: 让 Jenkins Pod 内部可以直接执行 docker 命令
+            # 原理: 容器内的 docker CLI 通过此 socket 与宿主机 Docker daemon 通信
+            # 注意: 这要求宿主机的 Docker CLI 在 Jenkins 镜像中存在
+            #       如果 Jenkins 镜像没有 docker CLI，需要单独安装或使用 Kaniko
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+
+      volumes:
+        - name: jenkins-data
+          persistentVolumeClaim:
+            claimName: jenkins-data
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock   # ← 宿主机 Docker Socket 路径
+            # type: Socket 可以加上，但不是必须的
+
+---
+# =====================================================================
+# Service: Jenkins 集群内访问
+# =====================================================================
+# DNS 名称: jenkins.jenkins.svc.cluster.local
+# 端口:
+#   8080  → Jenkins Web UI
+#   50000 → Jenkins Agent (JNLP) 通信端口
+apiVersion: v1
+kind: Service
+metadata:
+  name: jenkins
+  namespace: jenkins
+spec:
+  type: ClusterIP           # ← 集群内部访问（通过 Ingress 暴露对外）
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+    - port: 50000
+      targetPort: 50000
+      name: agent
+  selector:
+    app: jenkins
+
+---
+# =====================================================================
+# Ingress: 对外暴露 Jenkins Web 访问
+# =====================================================================
+# 访问地址: http://${JENKINS_DOMAIN}:${NODE_PORT} (前提: hosts 中 jenkins.test → K8s IP)
+# 端口说明: 31716 是 nginx Ingress Controller 的 NodePort
+#          如果你的 Ingress Controller 端口不同，替换访问 URL 中的端口即可
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jenkins
+  namespace: jenkins
+spec:
+  ingressClassName: ${INGRESS_CLASS}    # ← 替换为你的 Ingress Controller 类名
+  rules:
+    - host: ${JENKINS_DOMAIN}     # ← 替换为你的 Jenkins 域名
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: jenkins
+                port:
+                  number: 8080

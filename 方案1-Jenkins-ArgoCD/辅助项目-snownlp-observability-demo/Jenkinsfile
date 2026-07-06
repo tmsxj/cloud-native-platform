@@ -1,0 +1,238 @@
+// ============================================================
+// Jenkinsfile - snownlp-demo CI/CD 流水线
+// ============================================================
+// 方案: Jenkins (CI) + ArgoCD (CD) GitOps 联动
+// 流程: git push → Jenkins 构建镜像 → 更新 K8s 清单 → ArgoCD 自动同步
+// Pipeline: Checkout → Unit Test → Build → Push → Update Manifests → Git Push → Wait Sync
+// ============================================================
+
+pipeline {
+    agent any
+
+    // ---- 环境变量 ----
+    environment {
+        // Harbor 镜像仓库地址
+        HARBOR_REGISTRY = '192.168.1.61'
+        // 镜像路径 (不带 tag)
+        IMAGE_NAME      = "${HARBOR_REGISTRY}/monitoring/snownlp-demo"
+        // 镜像标签: 时间戳 + 构建编号, 如 20260625-130001-42
+        IMAGE_TAG       = "${BUILD_TIMESTAMP}-${BUILD_NUMBER}"
+        // K8s 部署文件路径 (相对于仓库根目录)
+        DEPLOY_FILE     = '01-app/deployment.yaml'
+    }
+
+    // ---- 触发条件: 仅 master/main 分支变更时触发 ----
+    // 也可以通过 Jenkins Webhook / Poll SCM 触发
+
+    stages {
+
+        // ============================================================
+        // Stage 1: 拉取代码
+        // ============================================================
+        stage('Checkout') {
+            steps {
+                echo "============================================"
+                echo "  [CI] Stage 1: 拉取代码"
+                echo "  Branch: ${env.BRANCH_NAME}"
+                echo "  Commit: ${env.GIT_COMMIT?.take(8)}"
+                echo "============================================"
+                checkout scm
+                // 如果 Jenkins 没有配置 SCM, 手动 clone:
+                // git branch: 'main',
+                //     url: 'https://your-git-server/snownlp-observability-demo.git',
+                //     credentialsId: 'git-credential-id'
+            }
+        }
+
+        // ============================================================
+        // Stage 2: 单元测试 (Pytest)
+        // ============================================================
+        stage('Unit Test') {
+            steps {
+                echo "============================================"
+                echo "  [CI] Stage 2: 单元测试"
+                echo "============================================"
+                dir('01-app') {
+                    // 安装依赖 + 运行 pytest
+                    sh '''#!/bin/bash
+                        pip install -r requirements.txt -q 2>/dev/null || true
+                        pip install pytest pytest-cov -q 2>/dev/null || true
+                        pytest --tb=short --maxfail=5 || {
+                            echo "WARNING: 测试失败，但不阻塞构建（演示环境放宽）"
+                        }
+                    '''
+                }
+            }
+        }
+
+        // ============================================================
+        // Stage 3: 构建 Docker 镜像
+        // ============================================================
+        stage('Build Image') {
+            steps {
+                echo "============================================"
+                echo "  [CI] Stage 3: 构建 Docker 镜像"
+                echo "  Image: ${IMAGE_NAME}:${IMAGE_TAG}"
+                echo "============================================"
+
+                dir('01-app') {
+                    sh '''
+                        docker build \
+                            -t ${IMAGE_NAME}:${IMAGE_TAG} \
+                            -t ${IMAGE_NAME}:latest \
+                            --label "git.commit=${GIT_COMMIT}" \
+                            --label "build.number=${BUILD_NUMBER}" \
+                            --label "build.time=${BUILD_TIMESTAMP}" \
+                            .
+                    '''
+                }
+            }
+        }
+
+        // ============================================================
+        // Stage 4: 推送镜像到 Harbor
+        // ============================================================
+        stage('Push Image') {
+            steps {
+                echo "============================================"
+                echo "  [CI] Stage 4: 推送镜像到 Harbor"
+                echo "  Target: ${HARBOR_REGISTRY}"
+                echo "============================================"
+
+                // 方式1: 用 Harbor 凭据登录 (需在 Jenkins 中配置 docker-registry 类型的 credential)
+                // withCredentials([usernamePassword(
+                //     credentialsId: 'harbor-credential',
+                //     usernameVariable: 'DOCKER_USER',
+                //     passwordVariable: 'DOCKER_PASS'
+                // )]) {
+                //     sh 'echo "${DOCKER_PASS}" | docker login ${HARBOR_REGISTRY} -u "${DOCKER_USER}" --password-stdin'
+                // }
+
+                // 方式2: 用 K8s Secret 中的凭据 (harbor-regcred)
+                // sh '''
+                //     kubectl get secret harbor-regcred -n monitoring -o jsonpath="{.data.\.dockerconfigjson}" | base64 -d > /tmp/docker-config.json
+                //     cat /tmp/docker-config.json | docker login ${HARBOR_REGISTRY} --config /tmp/
+                // '''
+
+                sh '''
+                    docker push ${IMAGE_NAME}:${IMAGE_TAG}
+                    docker push ${IMAGE_NAME}:latest
+                '''
+            }
+        }
+
+        // ============================================================
+        // Stage 5: 【关键】更新 K8s 部署清单中的镜像标签
+        // ============================================================
+        // GitOps 核心步骤: CI 不直接 kubectl apply, 而是修改 Git 中的清单文件
+        // ArgoCD 检测到 Git 变化后自动同步到 K8s
+        stage('Update GitOps Manifests') {
+            steps {
+                echo "============================================"
+                echo "  [CI] Stage 5: 更新 Git 中的镜像标签"
+                echo "  旧镜像 → 新镜像: ${IMAGE_NAME}:${IMAGE_TAG}"
+                echo "============================================"
+
+                script {
+                    def deployFilePath = "${WORKSPACE}/${DEPLOY_FILE}"
+
+                    // 替换 deployment.yaml 中的 image 行
+                    // 匹配模式: image: 192.168.1.61/monitoring/snownlp-demo:任意tag
+                    def sedCommand = """
+                        sed -i "s|image: ${IMAGE_NAME}:.*|image: ${IMAGE_NAME}:${IMAGE_TAG}|g" ${deployFilePath}
+                    """
+                    sh sedCommand
+
+                    // 验证替换结果
+                    sh "grep 'image:' ${deployFilePath} | head -3"
+                }
+            }
+        }
+
+        // ============================================================
+        // Stage 6: 提交并推送变更到 Git
+        // ============================================================
+        stage('Git Commit & Push') {
+            steps {
+                echo "============================================"
+                echo "  [CI] Stage 6: 提交镜像标签变更到 Git"
+                echo "============================================"
+
+                script {
+                    sh '''
+                        git config user.email "jenkins@cicd.local"
+                        git config user.name "Jenkins CI"
+
+                        git add ${DEPLOY_FILE}
+                        git diff --cached --stat
+
+                        git commit -m "[CI] auto: update image to ${IMAGE_TAG}
+
+                        Build: #${BUILD_NUMBER}
+                        Image: ${IMAGE_NAME}:${IMAGE_TAG}
+                        Commit: ${GIT_COMMIT}"
+
+                        git push origin HEAD:${BRANCH_NAME}
+                    '''
+                }
+            }
+        }
+
+        // ============================================================
+        // Stage 7: 等待 ArgoCD 自动同步完成 (可选)
+        // ============================================================
+        // ArgoCD 默认每 3 分钟检测一次 Git 变化 (可调小到 30s)
+        // 这里可选地等待 ArgoCD 同步完成并检查健康状态
+        stage('Wait ArgoCD Sync') {
+            steps {
+                echo "============================================"
+                echo "  [CI] Stage 7: 等待 ArgoCD 自动同步"
+                echo "============================================"
+
+                // 可选: 用 ArgoCD CLI 或 API 手动触发同步并等待
+                // 企业常用: ArgoCD 每 30s~3min 轮询, CI 也可以主动触发
+                //
+                // 方式1: argocd CLI
+                // sh '''
+                //     argocd app sync snownlp-demo --insecure --grpc-web
+                //     argocd app wait snownlp-demo --insecure --grpc-web --health --timeout 120
+                // '''
+                //
+                // 方式2: ArgoCD REST API
+                // sh '''
+                //     curl -X POST http://argocd-server.argocd/api/v1/applications/snownlp-demo/sync \
+                //       -H "Authorization: Bearer ${ARGOCD_TOKEN}" \
+                //       -H "Content-Type: application/json"
+                // '''
+
+                echo "  ArgoCD 将自动检测 Git 变化并同步 (默认 3min 内)"
+                echo "  如需加速: ArgoCD → Settings → Timeout/reconciliation → 3min 改为 30s"
+            }
+        }
+    }
+
+    // ============================================================
+    // 构建后操作
+    // ============================================================
+    post {
+        success {
+            echo "============================================"
+            echo "  ✅ Pipeline SUCCESS"
+            echo "  镜像: ${IMAGE_NAME}:${IMAGE_TAG}"
+            echo "  验证: kubectl -n monitoring get deploy snownlp-demo -o jsonpath='{.spec.template.spec.containers[0].image}'"
+            echo "============================================"
+        }
+        failure {
+            echo "============================================"
+            echo "  ❌ Pipeline FAILED"
+            echo "  构建号: #${BUILD_NUMBER}"
+            echo "  分支: ${BRANCH_NAME}"
+            echo "============================================"
+        }
+        always {
+            // 清理本地镜像, 节省 Jenkins agent 磁盘
+            // sh "docker rmi ${IMAGE_NAME}:${IMAGE_TAG} || true"
+            // sh "docker rmi ${IMAGE_NAME}:latest || true"
+        }
+    }
+}

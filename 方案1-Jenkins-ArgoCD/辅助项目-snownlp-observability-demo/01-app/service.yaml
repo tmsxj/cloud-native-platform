@@ -1,0 +1,19 @@
+# ============================================================
+# snownlp-demo Service
+# ============================================================
+# 对内暴露: snownlp-demo.monitoring (被 loadgen 和 Ingress 调用)
+# 对外暴露: 通过 Ingress Host=snownlp.lab.local 访问
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: snownlp-demo
+  namespace: monitoring
+spec:
+  selector:
+    app: snownlp-demo          # 选中上面 Deployment 的 Pod
+  ports:
+    - name: http
+      port: 80                  # Service 端口（集群内访问用 80）
+      targetPort: 8000          # Pod 容器端口（实际监听 8000）
+  type: ClusterIP               # 仅集群内部访问，外部通过 Ingress

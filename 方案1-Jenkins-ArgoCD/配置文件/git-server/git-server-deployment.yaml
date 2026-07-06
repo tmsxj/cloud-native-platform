@@ -1,0 +1,226 @@
+# ============================================================================
+# Git Server 全栈部署文件
+# ============================================================================
+# 功能: 在内网 K8s 集群中部署轻量级 Git 服务器
+# 架构:
+#   ┌─────────────────────────────────────┐
+#   │         Git Server Pod              │
+#   │  ┌──────────┐  ┌────────────────┐   │
+#   │  │  Nginx   │  │   Git Daemon   │   │
+#   │  │  :80     │  │   :9418        │   │
+#   │  │  静态浏览 │  │  git:// 协议   │   │
+#   │  └────┬─────┘  └───────┬────────┘   │
+#   │       └──────┬─────────┘            │
+#   │         PVC: git-repos              │
+#   └─────────────────────────────────────┘
+#
+# 访问方式:
+#   - 浏览器查看: http://git-server.git.svc.cluster.local (Nginx 80)
+#   - Git 操作:   git://git-server.git.svc.cluster.local:9418/<仓库名>.git
+#
+# 关键配置说明:
+#   --enable=receive-pack → 允许 git push (否则 ArgoCD/Jenkins 无法回写)
+#   --export-all          → 导出所有仓库 (不需要在每个仓库中创建 git-daemon-export-ok)
+#   --base-path=/repos    → 仓库根目录, clone 时直接用仓库名
+#
+# 前置依赖:
+#   1. StorageClass "local-path" 已存在
+#   2. 镜像 ${HARBOR_IP}/library/nginx:alpine 已推送到 Harbor
+#   3. 镜像 ${HARBOR_IP}/library/jenkins:lts 已推送到 Harbor
+#   4. 命名空间 "git" 已创建: kubectl create namespace git
+# ============================================================================
+
+---
+# =====================================================================
+# PVC: 持久化 Git 仓库数据
+# =====================================================================
+# 说明: 所有 bare repo 都存放在这个 PVC 中，需要确保 StorageClass 存在
+# 扩展: 如果仓库较大，增大 storage 值；如果要备份，直接备份 PV 目录即可
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: git-repos
+  namespace: git
+spec:
+  accessModes:
+    - ReadWriteOnce       # ← 单节点读写（Git Server 只有一个副本）
+  resources:
+    requests:
+      storage: 1Gi        # ← 纯文本文档仓库，1Gi 足够
+  storageClassName: ${STORAGE_CLASS}  # ← 替换为你的 StorageClass 名称
+
+---
+# =====================================================================
+# Init Job: 初始化裸仓库（bare repo）
+# =====================================================================
+# 说明: 在 Git Server Pod 启动前，自动创建 snownlp-observability-demo.git
+#        和 monitoring-config.git 两个裸仓库
+# 为什么用 Job 而不是手动执行:
+#   → 确保每次重新部署时仓库都自动创建好，不需要人工介入
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: git-init
+  namespace: git
+spec:
+  ttlSecondsAfterFinished: 60    # ← Job 完成 60 秒后自动清理（不占空间）
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: init
+          # 使用 jenkins:lts 镜像（自带 git 命令）
+          image: ${HARBOR_IP}/library/jenkins:lts
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e   # ← 任何命令失败就退出，防止仓库半成品
+              # ---- 业务应用仓库（SnowNLP 情感分析 Demo）----
+              if [ ! -d /repos/snownlp-observability-demo.git ]; then
+                cd /repos
+                git init --bare snownlp-observability-demo.git
+                echo "snownlp-observability-demo.git created"
+              fi
+              # ---- 监控配置仓库（Prometheus/Loki/Grafana 等）----
+              if [ ! -d /repos/monitoring-config.git ]; then
+                cd /repos
+                git init --bare monitoring-config.git
+                echo "monitoring-config.git created"
+              fi
+          volumeMounts:
+            - name: repos
+              mountPath: /repos    # ← 挂载到 PVC 的目录
+      volumes:
+        - name: repos
+          persistentVolumeClaim:
+            claimName: git-repos
+
+---
+# =====================================================================
+# Git Server Deployment (双容器架构)
+# =====================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: git-server
+  namespace: git
+  labels:
+    app: git-server
+spec:
+  replicas: 1                     # ← Git Server 单副本（无状态依赖）
+  selector:
+    matchLabels:
+      app: git-server
+  template:
+    metadata:
+      labels:
+        app: git-server
+    spec:
+      containers:
+        # ===================================================
+        # 容器 1: Nginx — 提供 HTTP Web 浏览
+        # ===================================================
+        # 作用: 通过浏览器查看 Git 仓库内容（只读展示）
+        # 访问: http://git-server.git.svc.cluster.local/
+        # 挂载: /usr/share/nginx/html → PVC 中的仓库目录
+        - name: nginx
+          image: ${HARBOR_IP}/library/nginx:alpine
+          ports:
+            - containerPort: 80
+              name: http
+          volumeMounts:
+            - name: repos
+              mountPath: /usr/share/nginx/html   # ← Nginx 默认文档根目录
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+
+        # ===================================================
+        # 容器 2: Git Daemon — 提供 git:// 协议
+        # ===================================================
+        # 作用: 提供 git clone/pull/push 服务（git:// 协议）
+        # 关键: --enable=receive-pack 允许 git push
+        #       如果不加这个参数，只能 clone/pull，无法 push
+        #       这就是为什么 Jenkins 能通过 git push 回写 yaml 文件的原因
+        - name: git-daemon
+          image: ${HARBOR_IP}/library/jenkins:lts
+          command:
+            - /bin/bash
+            - -c
+            - |
+              # ---- 安全目录配置：Git 2.35+ 要求声明 safe.directory ----
+              git config --global --add safe.directory /repos
+              git config --global --add safe.directory /repos/snownlp-observability-demo.git
+              git config --global --add safe.directory /repos/monitoring-config.git
+
+              echo "Starting git daemon on port 9418..."
+              echo "Serving repos from /repos"
+              # ---- 启动 Git Daemon ----
+              # 各参数说明:
+              #   --reuseaddr        → 复用端口（重启时无需等 TIME_WAIT）
+              #   --base-path=/repos → 仓库根目录，之后 clone 只需仓库名
+              #   --export-all       → 导出所有仓库（默认需要 git-daemon-export-ok 文件）
+              #   --enable=receive-pack → ★关键★ 允许 git push
+              #   --verbose          → 详细日志（方便排查问题）
+              #   --port=9418        → 监听 9418 端口（git:// 协议默认端口）
+              git daemon \
+                --reuseaddr \
+                --base-path=/repos \
+                --export-all \
+                --enable=receive-pack \
+                --verbose \
+                --port=9418
+          ports:
+            - containerPort: 9418
+              name: git
+          volumeMounts:
+            - name: repos
+              mountPath: /repos
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+
+      volumes:
+        - name: repos
+          persistentVolumeClaim:
+            claimName: git-repos
+
+---
+# =====================================================================
+# Service: 集群内访问入口
+# =====================================================================
+# 作用: 让其他 Pod 通过 DNS 名称访问 Git Server
+# DNS 名称: git-server.git.svc.cluster.local
+# 端口映射:
+#   80   → Nginx HTTP 页面浏览
+#   9418 → Git Daemon git:// 协议 (clone/pull/push 都用这个)
+apiVersion: v1
+kind: Service
+metadata:
+  name: git-server
+  namespace: git
+spec:
+  selector:
+    app: git-server
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: git
+      port: 9418
+      targetPort: 9418

@@ -1,0 +1,56 @@
+# =============================================================================
+# Kustomize Base: Tomcat Rollout (通用模板 - P2 Argo Rollouts)
+# =============================================================================
+# 替换原 Deployment，支持金丝雀/蓝绿发布策略
+# 环境差异通过 overlays/<env>/kustomization.yaml 的 patches 覆盖
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: tomcat-app
+  labels:
+    app: tomcat-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: tomcat-app
+  template:
+    metadata:
+      labels:
+        app: tomcat-app
+    spec:
+      imagePullSecrets:
+        - name: harbor-regcred
+      containers:
+        - name: tomcat-app
+          image: ${HARBOR_IP}/tomcat-demo/tomcat-app:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 40
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          env:
+            - name: JAVA_OPTS
+              value: "-Xms128m -Xmx384m"
+            - name: APP_VERSION
+              value: "v1-init"

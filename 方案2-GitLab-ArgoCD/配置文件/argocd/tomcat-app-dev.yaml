@@ -1,0 +1,32 @@
+# =============================================================================
+# ArgoCD Application: tomcat-app-dev (DEV 环境)
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tomcat-app-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    namespace: tomcat-dev
+    server: https://kubernetes.default.svc
+  source:
+    repoURL: http://gitlab.gitlab.svc.cluster.local/root/tomcat-app.git
+    targetRevision: main
+    path: k8s/overlays/dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground

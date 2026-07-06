@@ -1,0 +1,94 @@
+# PROD Overlay: 零中断 + 高资源 + 严格探针 + 蓝绿发布
+# 注意: 不使用 commonLabels (kustomize 不识 Rollout CRD，标签不会注入到 selector)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: tomcat-prod
+
+resources:
+  - ../../base
+  - namespace.yaml
+  # secret.yaml 已存在于集群，此处仅作参考模板
+  - preview-service.yaml
+
+patches:
+  - target:
+      kind: Rollout
+      name: tomcat-app
+    patch: |-
+      # 显式添加 env 标签
+      - op: add
+        path: /metadata/labels/env
+        value: "prod"
+      - op: add
+        path: /spec/template/metadata/labels/env
+        value: "prod"
+      - op: add
+        path: /spec/selector/matchLabels/env
+        value: "prod"
+      # APP_ENV 环境变量
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: APP_ENV
+          value: "prod"
+      # 严格探针
+      - op: replace
+        path: /spec/template/spec/containers/0/livenessProbe/initialDelaySeconds
+        value: 60
+      - op: replace
+        path: /spec/template/spec/containers/0/livenessProbe/periodSeconds
+        value: 20
+      - op: add
+        path: /spec/template/spec/containers/0/livenessProbe/failureThreshold
+        value: 5
+      - op: replace
+        path: /spec/template/spec/containers/0/readinessProbe/initialDelaySeconds
+        value: 40
+      # 更高资源配额
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "512Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "200m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "1Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "1000m"
+      # 更大堆内存
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: "-Xms256m -Xmx768m"
+      # 蓝绿发布策略（手动推进）
+      - op: add
+        path: /spec/strategy
+        value:
+          blueGreen:
+            activeService: tomcat-app
+            previewService: tomcat-app-preview
+            previewReplicaCount: 1
+            autoPromotionEnabled: false
+            scaleDownDelaySeconds: 600
+  - target:
+      kind: Service
+      name: tomcat-app
+    patch: |-
+      - op: add
+        path: /metadata/labels/env
+        value: "prod"
+      - op: add
+        path: /spec/selector/env
+        value: "prod"
+  - target:
+      kind: Service
+      name: tomcat-app-preview
+    patch: |-
+      - op: add
+        path: /metadata/labels/env
+        value: "prod"
+      - op: add
+        path: /spec/selector/env
+        value: "prod"

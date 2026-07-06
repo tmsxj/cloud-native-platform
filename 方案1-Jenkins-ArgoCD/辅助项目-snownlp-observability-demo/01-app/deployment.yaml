@@ -1,0 +1,100 @@
+# ============================================================
+# snownlp-demo Deployment
+# ============================================================
+# 部署命令: kubectl apply -f deployment.yaml
+# 验证命令: kubectl logs -n monitoring deployment/snownlp-demo
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: snownlp-demo
+  namespace: monitoring
+  labels:
+    app: snownlp-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: snownlp-demo
+  template:
+    metadata:
+      labels:
+        app: snownlp-demo
+      annotations:
+        # ---- Prometheus 自动发现注解 ----
+        # Prometheus 通过 kubernetes_sd_config 发现这些注解并自动抓取指标
+        prometheus.io/scrape: "true"    # 启用抓取
+        prometheus.io/port: "8000"      # 抓取端口
+        prometheus.io/path: "/metrics"  # 抓取路径
+    spec:
+      containers:
+        - name: app
+          # --- GitOps: 此标签由 Jenkins CI 自动更新, 请勿手动修改 ---
+          # Jenkins Pipeline: sed 替换 image: ...:任意tag → image: ...:构建号
+          # ArgoCD 检测到此行变化后自动同步到 K8s
+          image: ${HARBOR_IP}/monitoring/snownlp-demo:sw-agent
+          imagePullPolicy: IfNotPresent
+
+          # ============================================================
+          # 【核心】用 sw-python run 启动，自动注入 SkyWalking agent
+          # 不能用 "python app.py" 或者 "uvicorn app:app"，必须通过 sw-python 包装！
+          # command + args 等价于执行: sw-python run uvicorn app:app --host 0.0.0.0 --port 8000
+          # ============================================================
+          command: ["sw-python", "run"]
+          args:
+            - "/usr/local/bin/uvicorn"
+            - "app:app"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8000"
+
+          ports:
+            - name: http
+              containerPort: 8000
+
+          env:
+            # SkyWalking 服务名称，在 SkyWalking UI 中显示
+            - name: SW_AGENT_NAME
+              value: "snownlp-demo"
+            # SkyWalking OAP gRPC 上报地址（端口 11800 是 gRPC，12800 是 HTTP/GraphQL）
+            - name: SW_AGENT_COLLECTOR_BACKEND_SERVICES
+              value: "skywalking-oap.monitoring:11800"
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          # ---- 健康检查 ----
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30    # 等 30s 才检查（容器启动需要时间）
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5     # 5s 后即可接收流量
+            periodSeconds: 5
+
+          # ---- 挂载 ConfigMap 中的 app.py 代码 ----
+          # 优势: 修改代码只需更新 ConfigMap 后重启 Pod，不用重新构建镜像
+          volumeMounts:
+            - name: app-code
+              mountPath: /app/app.py    # 覆盖镜像中的 /app/app.py
+              subPath: app.py           # 只挂载 ConfigMap 中的 app.py key
+
+      volumes:
+        - name: app-code
+          configMap:
+            name: snownlp-demo-app      # 指向包含 app.py 的 ConfigMap
+
+      # ---- 私有镜像仓库认证 ----
+      imagePullSecrets:
+        - name: harbor-regcred

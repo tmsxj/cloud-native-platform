@@ -1,0 +1,67 @@
+# ============================================================
+# ArgoCD Application - snownlp-demo
+# ============================================================
+# 作用: ArgoCD 监听 Git 仓库中 01-app/ 目录的变化,
+#       检测到变更后自动同步到 K8s 的 monitoring 命名空间
+#
+# 部署方式:
+#   kubectl apply -f argocd/snownlp-demo-app.yaml
+#   或通过 ArgoCD UI 创建 Application
+#
+# GitOps 工作流:
+#   开发者 push 代码 → Jenkins 构建镜像 → 更新 deployment.yaml → git push
+#   → ArgoCD 检测到 Git 变化 → 自动 kubectl apply 到 K8s
+# ============================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: snownlp-demo
+  namespace: argocd
+  # ---- finalizers: 删除 Application 时同时删除 K8s 资源 ----
+  # 如需清理环境时一起删除, 取消注释下一行:
+  # finalizers:
+  #   - resources-finalizer.argocd.argoproj.io
+spec:
+  # ---- ArgoCD 项目 ----
+  project: default
+
+  # ---- 目标集群 ----
+  # https://kubernetes.default.svc = 当前集群
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring          # 部署到 monitoring 命名空间
+
+  # ---- Git 来源 ----
+  # ⚠️ 部署前请修改为你的实际 Git 仓库地址
+  source:
+    repoURL: https://your-git-server/snownlp-observability-demo.git
+    targetRevision: main           # 监听 main 分支 (或 master)
+    path: 01-app                   # 只监听 01-app/ 目录下的 K8s 清单
+
+    # ---- 同步策略 ----
+    # directory: ArgoCD 递归扫描目录下所有 YAML/JSON 文件
+    directory:
+      recurse: false               # 01-app 下直接就是 YAML, 不需要递归
+      # exclude: '{loadgen-deployment.yaml,loadgen.py}'  # 如需排除压测器
+
+  # ---- 同步策略 ----
+  syncPolicy:
+    # ---- 自动同步 ----
+    automated:
+      prune: true                  # 自动删除 Git 中移除的资源 (保持干净)
+      selfHeal: true               # 自动修复: K8s 中手动改的自动回滚到 Git 状态
+      allowEmpty: false            # 不允许空目录 (安全: 避免误删所有资源)
+
+    # ---- 同步选项 ----
+    syncOptions:
+      - CreateNamespace=true       # 如果 namespace 不存在则自动创建
+      - PruneLast=true             # 先部署新资源再删除旧资源 (零停机)
+
+    # ---- 重试策略 ----
+    # 同步失败时重试, 避免暂时性错误导致报警
+    retry:
+      limit: 5                     # 最多重试 5 次
+      backoff:
+        duration: 5s               # 首次重试等待 5s
+        factor: 2                  # 指数退避: 5s → 10s → 20s → 40s
+        maxDuration: 3m            # 最大重试间隔 3min

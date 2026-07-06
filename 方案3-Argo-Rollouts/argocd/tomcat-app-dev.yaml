@@ -1,0 +1,35 @@
+# =============================================================================
+# ArgoCD Application: tomcat-app-dev (DEV 环境 - Rollout 版)
+# =============================================================================
+# 指向 Git 仓库中 Argo-Rollouts 版本的 kustomize overlay
+# 待 GitLab 恢复后提交新的 kustomization 到 Git 仓库生效
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tomcat-app-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    namespace: tomcat-dev
+    server: https://kubernetes.default.svc
+  source:
+    repoURL: http://gitlab.gitlab.svc.cluster.local/root/tomcat-app.git
+    targetRevision: main
+    path: argo-rollouts/k8s/overlays/dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground

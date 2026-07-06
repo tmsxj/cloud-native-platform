@@ -1,0 +1,73 @@
+# ============================================================
+# P1.6 — Tomcat + Skywalking Agent 部署
+# 验证日期: 2026-07-05 ✅
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tomcat-app-agent
+  namespace: tomcat-prod
+  labels:
+    app: tomcat-app-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tomcat-app-agent
+  template:
+    metadata:
+      labels:
+        app: tomcat-app-agent
+    spec:
+      containers:
+        - name: tomcat
+          image: 192.168.1.61/library/tomcat:9-jdk8
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            # ---- Skywalking Agent 注入 ----
+            # -javaagent: JVM 字节码增强，无侵入埋点
+            # service_name: OAP 控制台显示的服务名
+            # backend_service: OAP gRPC 地址（跨命名空间 DNS）
+            - name: JAVA_OPTS
+              value: >-
+                -javaagent:/skywalking/agent/skywalking-agent.jar
+                -Dskywalking.agent.service_name=tomcat-prod
+                -Dskywalking.agent.instance_name=tomcat-prod-$(POD_IP)
+                -Dskywalking.collector.backend_service=skywalking-oap.monitoring:11800
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: skywalking-agent
+              mountPath: /skywalking/agent
+              readOnly: true
+      volumes:
+        # hostPath: agent.jar 放在宿主机，避免每个 Pod 内置 30MB jar
+        - name: skywalking-agent
+          hostPath:
+            path: /opt/skywalking-agent
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tomcat-app-agent
+  namespace: tomcat-prod
+spec:
+  selector:
+    app: tomcat-app-agent
+  ports:
+    - port: 80
+      targetPort: 8080
+      name: http

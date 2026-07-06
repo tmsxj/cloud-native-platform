@@ -1,0 +1,68 @@
+# ============================================================
+# monitoring-ingress: 统一外部访问入口
+# ============================================================
+# 通过 Ingress NGINX Controller 的单个 NodePort (31716)
+# 以 HTTP Host 头区分路由，暴露所有监控/应用服务。
+#
+# 本地 hosts 文件需添加:
+#   <ingress-worker-ip>  grafana.lab.local  skywalking.lab.local  snownlp.lab.local  prometheus.lab.local
+# ============================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: monitoring-ingress
+  namespace: monitoring
+spec:
+  ingressClassName: ${INGRESS_CLASS}            # 指定使用 NGINX Ingress Controller
+  rules:
+    # ---- Grafana: 可视化大屏 ----
+    # 访问: http://grafana.lab.local:${NODE_PORT}
+    - host: grafana.lab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana
+                port:
+                  number: 80
+
+    # ---- Prometheus: 指标查询 ----
+    # 访问: http://prometheus.lab.local:${NODE_PORT}
+    - host: prometheus.lab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prometheus-server
+                port:
+                  number: 80
+
+    # ---- SkyWalking: 调用链追踪 UI ----
+    # 访问: http://skywalking.lab.local:${NODE_PORT}
+    - host: skywalking.lab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: skywalking-ui       # SkyWalking UI 前端
+                port:
+                  number: 80
+
+    # ---- snownlp-demo: 情感分析 REST API ----
+    # 访问: http://snownlp.lab.local:${NODE_PORT}/docs (Swagger UI)
+    - host: snownlp.lab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: snownlp-demo
+                port:
+                  number: 80

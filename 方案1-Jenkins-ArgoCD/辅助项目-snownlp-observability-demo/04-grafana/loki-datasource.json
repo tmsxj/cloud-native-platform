@@ -1,0 +1,23 @@
+{
+  "id": 2,
+  "uid": "efnwe7ofeik1sd",
+  "orgId": 1,
+  "name": "loki",
+  "type": "loki",
+  "access": "proxy",
+  "url": "http://loki.monitoring:3100",
+  "basicAuth": false,
+  "isDefault": false,
+  "jsonData": {
+    "derivedFields": [
+      {
+        "matcherRegex": "trace[_]?[iI][dD][=:]([a-fA-F0-9]{32})",
+        "name": "traceID",
+        "url": "http://skywalking.lab.local:31716/trace?traceId=${__value.raw}",
+        "urlDisplayLabel": "SkyWalking Trace"
+      }
+    ]
+  },
+  "version": 2,
+  "readOnly": false
+}
