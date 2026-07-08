@@ -1,0 +1,23 @@
+# Hubble 指标 ServiceMonitor —— 让 managed Prometheus 抓取 hubble-metrics (9965)
+# 关键：必须与 cilium-agent 的 ServiceMonitor 一样带 prometheus: managed 标签，
+# 否则被 managed Prometheus 的 serviceMonitorSelector 忽略。
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hubble-metrics
+  namespace: kube-system
+  labels:
+    prometheus: managed
+    app.kubernetes.io/part-of: cilium
+spec:
+  selector:
+    matchLabels:
+      k8s-app: hubble          # 匹配 hubble-metrics Service 的标签
+  namespaceSelector:
+    matchNames:
+      - kube-system
+  endpoints:
+    - port: hubble-metrics     # Service 端口名（9965）
+      path: /metrics
+      interval: 30s
+      honorLabels: true

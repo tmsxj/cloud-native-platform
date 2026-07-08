@@ -1,0 +1,1073 @@
+{
+ "annotations": {
+  "list": [
+   {
+    "builtIn": 1,
+    "datasource": {
+     "type": "grafana",
+     "uid": "-- Grafana --"
+    },
+    "enable": true,
+    "hide": true,
+    "iconColor": "rgba(0, 211, 255, 1)",
+    "name": "Annotations & Alerts",
+    "type": "dashboard"
+   }
+  ]
+ },
+ "editable": true,
+ "graphTooltip": 1,
+ "panels": [
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "gridPos": {
+    "h": 6,
+    "w": 6,
+    "x": 0,
+    "y": 0
+   },
+   "id": 1,
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": ""
+    }
+   },
+   "targets": [
+    {
+     "expr": "count(up{job=\"cilium-agent\"})",
+     "legendFormat": "agents",
+     "refId": "A"
+    }
+   ],
+   "title": "Cilium Agents Up",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "gridPos": {
+    "h": 6,
+    "w": 6,
+    "x": 6,
+    "y": 0
+   },
+   "id": 2,
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "reduceOptions": {
+     "calcs": [
+      "sum"
+     ],
+     "fields": ""
+    }
+   },
+   "targets": [
+    {
+     "expr": "sum(cilium_endpoint)",
+     "legendFormat": "endpoints",
+     "refId": "A"
+    }
+   ],
+   "title": "Endpoints (total)",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "gridPos": {
+    "h": 6,
+    "w": 6,
+    "x": 12,
+    "y": 0
+   },
+   "id": 3,
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "reduceOptions": {
+     "calcs": [
+      "sum"
+     ],
+     "fields": ""
+    }
+   },
+   "targets": [
+    {
+     "expr": "sum(cilium_policy)",
+     "legendFormat": "policies",
+     "refId": "A"
+    }
+   ],
+   "title": "Network Policies",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "gridPos": {
+    "h": 6,
+    "w": 6,
+    "x": 18,
+    "y": 0
+   },
+   "id": 4,
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "reduceOptions": {
+     "calcs": [
+      "mean"
+     ],
+     "fields": ""
+    }
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(cilium_forward_count_total[5m]))",
+     "legendFormat": "fwd/s",
+     "refId": "A"
+    }
+   ],
+   "title": "Forward Rate (eps)",
+   "type": "stat"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 6
+   },
+   "id": 30,
+   "title": "Traffic",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 7
+   },
+   "id": 5,
+   "targets": [
+    {
+     "expr": "sum by (direction) (rate(cilium_forward_count_total[5m]))",
+     "legendFormat": "{{direction}}",
+     "refId": "A"
+    }
+   ],
+   "title": "Forward Rate by Direction",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 7
+   },
+   "id": 6,
+   "targets": [
+    {
+     "expr": "topk(5, sum by (reason) (rate(cilium_drop_count_total[5m])))",
+     "legendFormat": "{{reason}}",
+     "refId": "A"
+    }
+   ],
+   "title": "Drop Rate by Reason (top5)",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "unit": "Bps"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 15
+   },
+   "id": 7,
+   "targets": [
+    {
+     "expr": "sum by (direction) (rate(cilium_forward_bytes_total[5m]))",
+     "legendFormat": "{{direction}}",
+     "refId": "A"
+    }
+   ],
+   "title": "Forward Bytes by Direction",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "unit": "Bps"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 15
+   },
+   "id": 8,
+   "targets": [
+    {
+     "expr": "sum by (direction) (rate(cilium_drop_bytes_total[5m]))",
+     "legendFormat": "{{direction}}",
+     "refId": "A"
+    }
+   ],
+   "title": "Drop Bytes by Direction",
+   "type": "timeseries"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 23
+   },
+   "id": 31,
+   "title": "Endpoint & Policy",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 24
+   },
+   "id": 9,
+   "targets": [
+    {
+     "expr": "sum by (state) (cilium_endpoint_state)",
+     "legendFormat": "{{state}}",
+     "refId": "A"
+    }
+   ],
+   "title": "Endpoint State",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 24
+   },
+   "id": 10,
+   "targets": [
+    {
+     "expr": "sum(rate(cilium_endpoint_regenerations_total[5m]))",
+     "legendFormat": "regen/s",
+     "refId": "A"
+    }
+   ],
+   "title": "Endpoint Regenerations",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 32
+   },
+   "id": 11,
+   "targets": [
+    {
+     "expr": "sum(rate(cilium_policy_regeneration_total[5m]))",
+     "legendFormat": "regen/s",
+     "refId": "A"
+    }
+   ],
+   "title": "Policy Regenerations",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 32
+   },
+   "id": 12,
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "reduceOptions": {
+     "calcs": [
+      "sum"
+     ],
+     "fields": ""
+    }
+   },
+   "targets": [
+    {
+     "expr": "sum(cilium_policy_endpoint_enforcement_status)",
+     "legendFormat": "enforced",
+     "refId": "A"
+    }
+   ],
+   "title": "Policy Endpoint Enforcement",
+   "type": "stat"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 40
+   },
+   "id": 32,
+   "title": "BPF / Datapath",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 41
+   },
+   "id": 13,
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "reduceOptions": {
+     "calcs": [
+      "sum"
+     ],
+     "fields": ""
+    }
+   },
+   "targets": [
+    {
+     "expr": "sum(cilium_bpf_maps)",
+     "legendFormat": "maps",
+     "refId": "A"
+    }
+   ],
+   "title": "BPF Maps",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 41
+   },
+   "id": 14,
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "reduceOptions": {
+     "calcs": [
+      "sum"
+     ],
+     "fields": ""
+    }
+   },
+   "targets": [
+    {
+     "expr": "sum(cilium_bpf_progs)",
+     "legendFormat": "progs",
+     "refId": "A"
+    }
+   ],
+   "title": "BPF Programs",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 41
+   },
+   "id": 15,
+   "targets": [
+    {
+     "expr": "cilium_bpf_map_pressure",
+     "legendFormat": "{{map_name}}",
+     "refId": "A"
+    }
+   ],
+   "title": "BPF Map Pressure",
+   "type": "timeseries"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 49
+   },
+   "id": 33,
+   "title": "Connectivity / Health",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 0,
+    "y": 50
+   },
+   "id": 16,
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "reduceOptions": {
+     "calcs": [
+      "sum"
+     ],
+     "fields": ""
+    }
+   },
+   "targets": [
+    {
+     "expr": "sum(cilium_node_connectivity_status)",
+     "legendFormat": "connected",
+     "refId": "A"
+    }
+   ],
+   "title": "Node Connectivity (sum)",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 6,
+    "y": 50
+   },
+   "id": 17,
+   "targets": [
+    {
+     "expr": "cilium_node_connectivity_status",
+     "legendFormat": "{{type}}/{{protocol}} {{target_node}}",
+     "refId": "A"
+    }
+   ],
+   "title": "Node Connectivity Status",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 18,
+    "y": 50
+   },
+   "id": 18,
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "reduceOptions": {
+     "calcs": [
+      "sum"
+     ],
+     "fields": ""
+    }
+   },
+   "targets": [
+    {
+     "expr": "sum(cilium_unreachable_nodes)",
+     "legendFormat": "nodes",
+     "refId": "A"
+    }
+   ],
+   "title": "Unreachable Nodes",
+   "type": "stat"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 58
+   },
+   "id": 34,
+   "title": "Errors / Resources",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 59
+   },
+   "id": 19,
+   "targets": [
+    {
+     "expr": "sum by (level) (rate(cilium_errors_warnings_total[5m]))",
+     "legendFormat": "{{level}}",
+     "refId": "A"
+    }
+   ],
+   "title": "Errors / Warnings Rate",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 12,
+    "y": 59
+   },
+   "id": 20,
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "reduceOptions": {
+     "calcs": [
+      "sum"
+     ],
+     "fields": ""
+    }
+   },
+   "targets": [
+    {
+     "expr": "sum(cilium_controllers_failing)",
+     "legendFormat": "failing",
+     "refId": "A"
+    }
+   ],
+   "title": "Controllers Failing",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "unit": "bytes"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 18,
+    "y": 59
+   },
+   "id": 21,
+   "targets": [
+    {
+     "expr": "sum by (instance) (cilium_process_resident_memory_bytes)",
+     "legendFormat": "{{instance}}",
+     "refId": "A"
+    }
+   ],
+   "title": "Resident Memory by Agent",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 67
+   },
+   "id": 22,
+   "targets": [
+    {
+     "expr": "sum by (instance) (rate(cilium_process_cpu_seconds_total[5m]))",
+     "legendFormat": "{{instance}}",
+     "refId": "A"
+    }
+   ],
+   "title": "CPU by Agent",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 67
+   },
+   "id": 23,
+   "targets": [
+    {
+     "expr": "sum by (instance) (cilium_process_open_fds)",
+     "legendFormat": "{{instance}}",
+     "refId": "A"
+    }
+   ],
+   "title": "Open FDs by Agent",
+   "type": "timeseries"
+  },
+  {
+   "id": 35,
+   "title": "Hubble ??????????????????",
+   "type": "row",
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 75
+   },
+   "collapsed": false
+  },
+  {
+   "id": 100,
+   "title": "Hubble Flows Rate (by verdict)",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 76
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "expr": "sum by (verdict) (rate(hubble_flows_processed_total[5m]))",
+     "legendFormat": "{{verdict}}",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "id": 101,
+   "title": "Hubble Flow Verdict Share (cumulative)",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 76
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "expr": "sum by (verdict) (hubble_flows_processed_total)",
+     "legendFormat": "{{verdict}}",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "id": 102,
+   "title": "Hubble Drop Rate (top5 reasons)",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 84
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "expr": "topk(5, sum by (reason) (rate(hubble_drop_total[5m])))",
+     "legendFormat": "{{reason}}",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "id": 103,
+   "title": "Hubble TCP Flags",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 84
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "expr": "sum by (flag) (rate(hubble_tcp_flags_total[5m]))",
+     "legendFormat": "{{flag}}",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "id": 104,
+   "title": "Hubble Lost Events",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 92
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "expr": "sum by (source) (hubble_lost_events_total)",
+     "legendFormat": "{{source}}",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "id": 105,
+   "title": "Hubble DNS Queries (needs DNS traffic)",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "afrhyqopp15ogc"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 92
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(hubble_dns_queries_total[5m]))",
+     "legendFormat": "dns/s",
+     "refId": "A"
+    }
+   ]
+  }
+ ],
+ "refresh": "30s",
+ "schemaVersion": 39,
+ "tags": [
+  "cilium",
+  "ebpf",
+  "monitoring"
+ ],
+ "templating": {
+  "list": [
+   {
+    "datasource": {
+     "type": "prometheus",
+     "uid": "afrhyqopp15ogc"
+    },
+    "includeAll": true,
+    "multi": true,
+    "name": "direction",
+    "query": "label_values(cilium_forward_count_total, direction)",
+    "refresh": 2,
+    "type": "query"
+   }
+  ]
+ },
+ "time": {
+  "from": "now-6h",
+  "to": "now"
+ },
+ "timepicker": {},
+ "timezone": "",
+ "title": "Cilium eBPF Agent Monitoring",
+ "uid": "cilium-ebpf-mon",
+ "version": 3
+}

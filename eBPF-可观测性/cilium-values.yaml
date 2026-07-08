@@ -1,0 +1,104 @@
+# Cilium eBPF - 实际已接管 CNI（节点 /etc/cni/net.d/05-cilium.conflist 生效，
+#   Calico 配置已备份为 10-calico.conflist.cilium_bak；kube-proxy 仍保留）
+# 部署策略：低资源占用，启用Hubble可观测性，VXLAN隧道模式
+# Revision 4: 显式启用 Hubble server listenAddress
+
+# === 核心模式 ===
+cni:
+  enabled: false                            # 注意：chart 不管理 CNI 配置；但节点上 Cilium 已是实际 CNI，Calico 已被备份停用（见上方说明）
+kubeProxyReplacement: false                  # 不替换 kube-proxy
+routingMode: tunnel                         # VXLAN 隧道模式（兼容 Calico/K3s）
+tunnelProtocol: vxlan
+
+# === IPAM ===
+ipam:
+  mode: cluster-pool                         # 集群池模式
+
+# === Hubble 可观测性 ===
+hubble:
+  enabled: true
+  listenAddress: ":4244"                    # 显式启用 Hubble gRPC server
+  relay:
+    enabled: true
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+  ui:
+    enabled: true                           # Hubble Web UI
+  metrics:
+    enabled:
+      - dns                                 # DNS 查询监控（hubble_dns_queries_total）
+      - drop:labels                          # 丢包标签
+      - tcp:flags                            # TCP 标志位
+      - flow:labels                          # 流量标签
+  tls:
+    enabled: false                          # 禁用 TLS（内网环境）
+
+# === Agent 资源限制（适配 2C/8GB Worker）===
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# === Operator 资源限制 ===
+operator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  replicas: 1
+
+# === 调度约束 ===
+# Cilium DaemonSet 需要在所有节点运行才能做 eBPF 监控
+tolerations:
+  - key: "node-role.kubernetes.io/control-plane"
+    operator: Exists
+    effect: NoSchedule
+  - key: "node-role.kubernetes.io/master"
+    operator: Exists
+    effect: NoSchedule
+  # 根治滚动更新时的 agent-not-ready taint 死锁（见 README 坑6）——已启用：
+  - key: "node.cilium.io/agent-not-ready"
+    operator: Exists
+    effect: NoSchedule
+
+# === 安全策略（仅监控，不阻断）===
+policyEnforcementMode: default               # 不启用策略强制
+identityAllocationMode: crd
+agentNotReadyTaintKey: ""                    # 禁用 agent-not-ready taint（避免循环阻塞）
+
+# === Prometheus 指标 ===
+# Revision 5: 接入已有 Prometheus Operator（monitoring 命名空间，实例 managed）
+# 关键：ServiceMonitor 必须带 label prometheus=managed，否则被实例 selector 忽略
+prometheus:
+  enabled: true                              # 创建 Cilium agent metrics service，暴露 eBPF/Hubble 指标
+  # Revision 6: 启用 agent 级 eBPF 指标。注意：Cilium agent 默认即暴露大量
+  # cilium_* 指标（forward/drop/endpoint/policy/bpf/...），无需 + 启用。
+  # 下方仅保留确属有效且本项目关注的核心指标；下列无效名在 agent 中并不存在、
+  # 会被静默忽略（详见 README 坑7），故已剔除：
+  #   +cilium_endpoint_count / +cilium_datapath_drop_count_total /
+  #   +cilium_policy_endpoint_enforcement / +cilium_dns_queries_total /
+  #   +cilium_dns_records_count / +cilium_events_drop
+  metrics:
+    - "+cilium_forward_count_total"
+    - "+cilium_drop_count_total"
+    - "+cilium_ipcache_errors_total"
+  serviceMonitor:
+    enabled: true                            # 创建 ServiceMonitor，Prometheus Operator 自动发现并抓取
+    labels:
+      prometheus: managed                    # 匹配 Prometheus 实例的 serviceMonitorSelector
+    scrapeInterval: 30s
+
+# === 存储优化 ===
+etcd:
+  enabled: false                              # K3s 已有 etcd，不额外部署
