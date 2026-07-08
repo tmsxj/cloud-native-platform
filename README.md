@@ -2,7 +2,7 @@
 
 > 基于自建 5 节点 K8s 集群的 DevOps 实战项目，覆盖 **CI/CD 三方案 → 可观测性三大支柱 → 灰度发布 → K8s 三基石** 全链路。
 >
-> 📅 最近更新: 2026-07-06 | 状态: P0~P2b 全部完成 ✅ | 集群 22 个监控 Pod Running
+> 📅 最近更新: 2026-07-09 | 状态: P0~P2b + 长期16 eBPF 全部完成 ✅ | 集群已开机，Cilium/Hubble(eBPF) 栈健康
 
 ---
 
@@ -138,13 +138,14 @@
 │   ├── monitoring-ingress.yaml        ← 4 路由 + TLS + basic-auth
 │   └── ...
 │
+├── eBPF-可观测性/                      ← eBPF 可观测性 (Cilium 接管 CNI + Hubble 流量观测)
 ├── 流量入口/                            ← Ingress 暴露 + cert-manager TLS + Gateway API 金丝雀
 ├── 密钥管理/                            ← Sealed Secrets 加密凭据落地
 ├── 镜像仓库/                            ← Harbor 自动清理策略
 ├── 存储管理/                            ← NFS Provisioner 动态存储供给
 ├── 弹性伸缩/                            ← KEDA Cron 定时伸缩
 ├── HiAgent/                             ← HiAgent 私有化部署运维实战
-├── 工作日志/                            ← 📝 工作日志 + 待办清单（每日多篇，按时间命名）
+├── 工作日志/                            ← 📝 日志(按日期归档) + 待办清单(进度/规划)
 └── 外网资源同步/                         ← 🌐 US→H1→Harbor 镜像/资料同步（脚本+手册）
 ```
 
@@ -213,6 +214,7 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 | **搜索存储** | Elasticsearch 3 节点集群 | SkyWalking 后端存储，Green 状态 2 索引含副本 ✅ |
 | **持久存储** | NFS Provisioner | 动态 PV 供给，ReadWriteMany，自建 watch loop ✅ |
 | **流量入口** | nginx-ingress + Gateway API | 域名路由 + TLS + 金丝雀权重分流 ✅ |
+| **eBPF 可观测性** | Cilium + Hubble | eBPF 接管 CNI(VXLAN) + Hubble 流量/DNS 可观测 + Grafana eBPF Dashboard ✅ |
 | **证书安全** | cert-manager | 自签 CA → ClusterIssuer → 4 SAN 域名 TLS ✅ |
 
 ---
@@ -248,4 +250,5 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 - ✅ **ES 集群** — 3 节点 StatefulSet，GREEN，含副本分片
 - ✅ **Loki 多租户** — auth_enabled + tenant_id + X-Scope-OrgID 隔离
 - ⏳ **Master 加内存** — 运维层面（P2c.10）
-- 📋 **长期任务** — eBPF / OpenTelemetry / Chaos Mesh / Kyverno
+- ✅ **eBPF 可观测性** — Cilium 接管 CNI(VXLAN) + Hubble 流量/DNS 可观测 + Grafana eBPF Dashboard（详见 `eBPF-可观测性/`）
+📋 **长期任务** — OpenTelemetry / Chaos Mesh / Kyverno（eBPF 已完成）
