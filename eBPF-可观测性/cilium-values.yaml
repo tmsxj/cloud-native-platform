@@ -71,6 +71,14 @@ tolerations:
   - key: "node.cilium.io/agent-not-ready"
     operator: Exists
     effect: NoSchedule
+  # 从 Calico 切回 Cilium 时节点处于 NotReady 且带下列 taint，若不容忍 agent 无法调度
+  # （鸡生蛋死锁）。令 agent 容忍，待 CNI 拉起后节点自动变 Ready、taint 消失：
+  - key: "node.kubernetes.io/not-ready"
+    operator: Exists
+    effect: NoSchedule
+  - key: "node.kubernetes.io/network-unavailable"
+    operator: Exists
+    effect: NoSchedule
 
 # === 安全策略（仅监控，不阻断）===
 policyEnforcementMode: default               # 不启用策略强制

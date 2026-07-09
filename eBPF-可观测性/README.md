@@ -6,6 +6,47 @@
 
 ---
 
+## 目录导航
+
+| 文件 | 内容 |
+|:---|:---|
+| `Cilium-生产配置指南.md` | 生产级完整接管配置（路由/IPAM/BPF/策略/Hubble/加密/资源） |
+| `故障排查手册.md` | 8 类踩坑快速定位（CrashLoop / taint 死锁 / 数据源选错 / Hubble 无数据…） |
+| `cilium-values.yaml` | 实际部署值（已接管 CNI，kube-proxy 保留） |
+| `hubble-servicemonitor.yaml` | Hubble 指标抓取（9965，带 `prometheus: managed`） |
+| `cilium-dashboard.json` | Grafana 面板（35 面板含 Hubble 行） |
+| `import_cilium_dashboard.py` / `create_grafana_datasource.py` | 面板导入 / 数据源创建 |
+| `backup/` | Calico 回退依据（非活跃配置） |
+
+## 架构总览
+
+```
+Pod ──> Cilium CNI (05-cilium.conflist) ──> eBPF 数据面 (VXLAN 隧道)
+        ├─> Hubble gRPC server (:4244) ──> Hubble Relay ──> Hubble UI / Grafana
+        ├─> cilium-agent metrics (:9962) ──┐
+        └─> hubble-metrics (:9965) ─────────┤──> managed Prometheus ──> Grafana Dashboard
+        kube-proxy 保留：Service NAT 仍由 kube-proxy 负责（kubeProxyReplacement=false）
+        Calico 已停用：10-calico.conflist.cilium_bak（回退备份，见 backup/）
+```
+
+## 生产决策速查
+
+| 场景 | 本项目配置 |
+|:---|:---|
+| 兼容已有 CNI / K3s | `routingMode: tunnel` + `tunnelProtocol: vxlan` |
+| 低资源 master | Agent requests 256Mi / limits 512Mi，容忍 control-plane |
+| 七层可观测 | `hubble.enabled=true` + `listenAddress: ":4244"` + Relay + UI |
+| 监控管线接入 | `prometheus.enabled` + ServiceMonitor 带 `prometheus: managed` |
+| 避免 taint 死锁 | `agentNotReadyTaintKey: ""` + tolerations 含 `node.cilium.io/agent-not-ready` |
+
+## 与 Calico 的关系
+
+- 同集群同刻只能有一个 CNI 真正接管 Pod 网络（kubelet 按 CNI 配置文件名字典序加载）。
+- 本项目现状：**Cilium 已实际接管**，Calico 仅作回退备份；上层全家桶不依赖特定 CNI。
+- 选型对比见 `../CNI总览/CNI-生产配置对比.md`；Calico 资料见 `../Calico-配置指南/`。
+
+---
+
 ## 一、集群前置条件
 
 | 检查项 | 结果 | 说明 |
