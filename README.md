@@ -148,6 +148,7 @@
 │
 ├── eBPF-可观测性/                      ← eBPF 可观测性 (Cilium 接管 CNI + Hubble 流量观测)
 ├── 混沌工程-ChaosMesh/                   ← Chaos Mesh 混沌工程（worker 限定，注入故障验证韧性）
+├── 策略即代码-Kyverno/                   ← Kyverno 策略即代码（准入控制，替代人工镜像检查）
 ├── CNI总览/                            ← Calico vs Cilium 生产配置对比（选型决策参考）
 ├── Calico-配置指南/                    ← Calico 生产配置详解 + 故障排查（作 Cilium 回退备援资料）
 ├── 流量入口/                            ← Ingress 暴露 + cert-manager TLS + Gateway API 金丝雀
@@ -227,6 +228,7 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 | **流量入口** | nginx-ingress + Gateway API | 域名路由 + TLS + 金丝雀权重分流 ✅ |
 | **eBPF 可观测性** | Cilium + Hubble | eBPF 接管 CNI(VXLAN) + Hubble 流量/DNS 可观测 + Grafana eBPF Dashboard ✅ |
 | **混沌工程** | Chaos Mesh | PodChaos/NetworkChaos/StressChaos 注入故障验证系统韧性（详见 `混沌工程-ChaosMesh/`）✅ |
+| **策略即代码** | Kyverno | 准入控制：禁 latest 标签 / 限可信仓库 / 要求探针 / 禁特权，替代人工镜像检查（详见 `策略即代码-Kyverno/`）✅ |
 | **证书安全** | cert-manager | 自签 CA → ClusterIssuer → 4 SAN 域名 TLS ✅ |
 
 ---
@@ -265,4 +267,5 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 - ✅ **eBPF 可观测性** — Cilium 接管 CNI(VXLAN) + Hubble 流量/DNS 可观测 + Grafana eBPF Dashboard（详见 `eBPF-可观测性/`）
 - ✅ **CNI 双资料** — Cilium 生产配置指南(含跨节点实测) + Calico 生产配置指南 + CNI 总览对比（详见 `eBPF-可观测性/Cilium-生产配置指南.md`、`Calico-配置指南/`、`CNI总览/`）
 - ✅ **Chaos Mesh 混沌工程** — chaos-testing 命名空间已部署（worker 限定，master 不跑 daemon）；PodChaos 实测注入并重建目标 Pod（详见 `混沌工程-ChaosMesh/`）
-📋 **长期任务** — ✅ OpenTelemetry+LGTM 已完成（LGTM 全栈 S3 化，方案 B 当前运行；方案 A=SkyWalking+ES manifest 保留）/ eBPF 已完成 / ✅ Chaos Mesh 已完成（worker 限定）/ 下一步：Kyverno
+- ✅ **Kyverno 策略即代码** — kyverno 命名空间已部署（worker 限定）；4 条策略（禁 latest 标签 / 限可信仓库 / 要求探针 / 禁特权）实测拦截违规 Pod、放行合规 Pod（详见 `策略即代码-Kyverno/`）
+📋 **长期任务** — ✅ OpenTelemetry+LGTM 已完成（LGTM 全栈 S3 化，方案 B 当前运行；方案 A=SkyWalking+ES manifest 保留）/ eBPF 已完成 / ✅ Chaos Mesh 已完成（worker 限定）/ ✅ Kyverno 已完成（worker 限定）| 全部主线任务完成 ✅

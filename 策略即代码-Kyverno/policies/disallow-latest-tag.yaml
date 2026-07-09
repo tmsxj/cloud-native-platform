@@ -1,0 +1,34 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest-tag
+  annotations:
+    policies.kyverno.io/title: 禁止镜像使用 latest 标签
+    policies.kyverno.io/category: 安全合规基线
+    policies.kyverno.io/severity: medium
+spec:
+  # Enforce = 违规直接拒绝准入
+  validationFailureAction: Enforce
+  rules:
+    - name: require-image-tag-not-latest
+      # 系统命名空间豁免，避免误伤控制面
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - kyverno
+                - cert-manager
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "镜像禁止用 :latest 标签，请固定版本（替代人工检查镜像标签）"
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest"

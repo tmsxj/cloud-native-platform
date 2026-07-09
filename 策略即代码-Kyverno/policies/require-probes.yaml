@@ -1,0 +1,35 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-probes
+  annotations:
+    policies.kyverno.io/title: 容器必须配置健康检查探针
+    policies.kyverno.io/category: 安全合规基线
+    policies.kyverno.io/severity: medium
+spec:
+  validationFailureAction: Enforce
+  rules:
+    - name: require-liveness-readiness
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - kyverno
+                - cert-manager
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "容器必须配置 livenessProbe 与 readinessProbe（替代人工检查健康检查）"
+        pattern:
+          spec:
+            containers:
+              - livenessProbe:
+                  periodSeconds: ">0"
+                readinessProbe:
+                  periodSeconds: ">0"

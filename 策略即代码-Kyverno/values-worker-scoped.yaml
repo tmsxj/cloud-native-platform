@@ -1,0 +1,39 @@
+# Kyverno 部署 values —— worker 限定版（适配本项目小集群）
+#
+# 关键点（踩坑对照 Chaos Mesh）：
+# 1) 用【顶层 nodeSelector】全局限定所有组件只调度到带 kyverno-scope=true 标签的 worker
+#    （各 controller 子项也能配 nodeSelector，但顶层一处即可全局生效，最省心）
+# 2) tolerations: [] —— master 自带 control-plane:NoSchedule 污点，我们不容忍，
+#    即使 nodeSelector 没命中也不会落到 master
+# 3) 各 controller replicas: 1 —— 演示环境无需 HA，省内存
+# 4) 镜像来自 ghcr.io（集群出网已放行），无需 Harbor 覆盖
+
+# 全局调度约束
+nodeSelector:
+  kyverno-scope: "true"
+tolerations: []
+
+# 各 controller 单副本 + 适度资源（worker 余量：W1~3.5G / W2~2.3G）
+admissionController:
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { cpu: 200m, memory: 256Mi }
+
+backgroundController:
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { cpu: 200m, memory: 256Mi }
+
+cleanupController:
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits:   { cpu: 100m, memory: 128Mi }
+
+reportsController:
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits:   { cpu: 100m, memory: 128Mi }

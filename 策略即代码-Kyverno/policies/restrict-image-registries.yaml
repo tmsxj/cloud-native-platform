@@ -1,0 +1,33 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-image-registries
+  annotations:
+    policies.kyverno.io/title: 仅允许可信镜像仓库
+    policies.kyverno.io/category: 安全合规基线
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Enforce
+  rules:
+    - name: validate-registries
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - kyverno
+                - cert-manager
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "仅允许从 Harbor(192.168.1.61:5000) 或 ghcr.io 拉取镜像（屏蔽 docker.io 等不可达/不可信源）"
+        pattern:
+          spec:
+            containers:
+              # | 表示 OR：镜像必须匹配 Harbor 或 ghcr.io
+              - image: "192.168.1.61:5000/* | ghcr.io/*"

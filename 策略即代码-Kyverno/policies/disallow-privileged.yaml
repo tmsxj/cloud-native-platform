@@ -1,0 +1,33 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged
+  annotations:
+    policies.kyverno.io/title: 禁止特权容器
+    policies.kyverno.io/category: 安全合规基线
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Enforce
+  rules:
+    - name: disallow-privileged-containers
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - kyverno
+                - cert-manager
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "禁止 privileged: true 容器（替代人工检查安全上下文）"
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  privileged: false
