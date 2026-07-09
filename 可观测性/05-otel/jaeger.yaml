@@ -1,0 +1,71 @@
+# Jaeger all-in-one（trace 后端，替代原 SkyWalking + Elasticsearch）
+# 镜像: 192.168.1.61/jaegertracing/jaeger:2.14.1（Harbor 离线，CNCF 毕业级）
+# Jaeger v2 all-in-one 默认启用 OTLP receiver(4317/4318) + UI(16686)，存储用内存
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger
+  namespace: monitoring
+  labels:
+    app: jaeger
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jaeger
+  template:
+    metadata:
+      labels:
+        app: jaeger
+    spec:
+      containers:
+      - name: jaeger
+        image: 192.168.1.61/jaegertracing/jaeger:2.14.1
+        ports:
+        - containerPort: 16686
+          name: ui
+        - containerPort: 4317
+          name: otlp-grpc
+        - containerPort: 4318
+          name: otlp-http
+        - containerPort: 14268
+          name: collect-http
+        - containerPort: 14250
+          name: grpc
+        env:
+        - name: SPAN_STORAGE_TYPE
+          value: memory
+        resources:
+          requests:
+            cpu: 100m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger
+  namespace: monitoring
+  labels:
+    app: jaeger
+spec:
+  selector:
+    app: jaeger
+  ports:
+  - name: ui
+    port: 16686
+    targetPort: 16686
+  - name: otlp-grpc
+    port: 4317
+    targetPort: 4317
+  - name: otlp-http
+    port: 4318
+    targetPort: 4318
+  - name: collect-http
+    port: 14268
+    targetPort: 14268
+  - name: grpc
+    port: 14250
+    targetPort: 14250

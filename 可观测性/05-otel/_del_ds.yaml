@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: del-jaeger-ds
+  namespace: monitoring
+spec:
+  restartPolicy: Never
+  containers:
+  - name: c
+    image: 192.168.1.61/library/alpine_curl
+    command: ["sh", "-c"]
+    args:
+    - |
+      echo "=== delete datasource id=4 (api-added Jaeger) ==="
+      curl -s -u admin:admin -X DELETE http://grafana.monitoring:80/api/datasources/4; echo
+      echo "=== remaining datasources ==="
+      curl -s -u admin:admin http://grafana.monitoring:80/api/datasources | grep -oE '"name":"[^"]+"'; echo

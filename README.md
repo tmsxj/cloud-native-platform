@@ -8,7 +8,7 @@
 
 ## 这是什么？
 
-一套完整的 K8s DevOps 落地工程，从零搭建了 **Harbor(镜像仓库) + Jenkins/GitLab CI(持续集成) + ArgoCD(GitOps 持续部署) + Prometheus/Grafana/Loki/SkyWalking(可观测性) + Argo Rollouts(灰度发布)**。
+一套完整的 K8s DevOps 落地工程，从零搭建了 **Harbor(镜像仓库) + Jenkins/GitLab CI(持续集成) + ArgoCD(GitOps 持续部署) + Prometheus/Grafana/Loki/OpenTelemetry+Jaeger(可观测性) + Argo Rollouts(灰度发布)**。
 
 可以作为 DevOps/SRE 岗位的 **面试作品** 或 **企业内部 DevOps 平台参考模板**。
 
@@ -51,7 +51,7 @@
         │                        可观测性三大支柱 (可观测性)                │
         │  Metrics: Prometheus + AlertManager + NodeExporter                  │
         │  Logs:    Loki + Promtail                                          │
-        │  Traces:  SkyWalking OAP + UI                                     │
+        │  Traces:  OpenTelemetry Collector + Jaeger (已替换 SkyWalking+ES)  │
         │  Panels:  Grafana (Dashboard JSON + 告警规则)                      │
         └─────────────────────────────────────────────────────────────────────┘
                                          │
@@ -132,10 +132,16 @@
 │   ├── 02-logs/                       ← Loki 日志聚合
 │   │   ├── log-alerting/              ← 日志分级告警 (3 条规则)
 │   │   └── loki-multitenant/          ← 多租户隔离
-│   ├── 03-traces/                     ← SkyWalking 链路追踪
+│   ├── 03-traces/                     ← SkyWalking 链路追踪（已废弃，被 05-otel 替换）
 │   │   └── agent/                     ← Java Agent 无侵入注入
-│   ├── 04-es-storage/                 ← ES 3 节点集群 (追踪存储后端)
-│   ├── monitoring-ingress.yaml        ← 4 路由 + TLS + basic-auth
+│   ├── 04-es-storage/                 ← ES 3 节点集群（已卸载，追踪存储改 Jaeger 内存）
+│   ├── 05-otel/                       ← ✅ OpenTelemetry + Jaeger 链路追踪（替换 SkyWalking+ES）
+│   │   ├── README.md                  ← 替换背景/架构/部署/验证/卸载/接入全流程
+│   │   ├── jaeger.yaml                ← Jaeger all-in-one 后端（OTLP receiver + UI :16686）
+│   │   ├── otel-collector.yaml        ← OTel Collector 收口网关（:4317/4318）
+│   │   ├── otel-demo-app.yaml         ← 演示应用（裸 OTLP/JSON 投递 trace）
+│   │   └── _grafana-datasources.yaml  ← Grafana 预置数据源 CM（含 Jaeger）
+│   ├── monitoring-ingress.yaml        ← 3 路由 + TLS + basic-auth（已移除 skywalking.lab.local）
 │   └── ...
 │
 ├── eBPF-可观测性/                      ← eBPF 可观测性 (Cilium 接管 CNI + Hubble 流量观测)
@@ -211,9 +217,9 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 | **证书管理** | cert-manager | 自签 CA → ClusterIssuer → TLS 证书自动颁发 ✅ |
 | **指标监控** | Prometheus + Grafana | 28 targets ALL UP + Cluster Overview Dashboard + 告警规则 |
 | **日志采集** | Loki + Promtail | 容器日志聚合搜索，trace_id 关联，多租户隔离 ✅ |
-| **链路追踪** | SkyWalking | 服务拓扑 + 调用链 + Java Agent 无侵入注入 ✅ |
+| **链路追踪** | OpenTelemetry + Jaeger | 标准 OTLP 收口（Collector :4317/4318）→ Jaeger 内存存储 + UI；Grafana 接 Jaeger 数据源 ✅ |
 | **弹性伸缩** | KEDA + HPA | Cron 定时伸缩 + CPU 指标伸缩 ✅ |
-| **搜索存储** | Elasticsearch 3 节点集群 | SkyWalking 后端存储，Green 状态 2 索引含副本 ✅ |
+| **搜索存储** | Elasticsearch 3 节点集群 | ❌ 已卸载（2026-07-09）：trace 存储改 Jaeger 内存，释放 ~6Gi local-path + worker 内存 |
 | **持久存储** | NFS Provisioner | 动态 PV 供给，ReadWriteMany，自建 watch loop ✅ |
 | **流量入口** | nginx-ingress + Gateway API | 域名路由 + TLS + 金丝雀权重分流 ✅ |
 | **eBPF 可观测性** | Cilium + Hubble | eBPF 接管 CNI(VXLAN) + Hubble 流量/DNS 可观测 + Grafana eBPF Dashboard ✅ |
@@ -238,7 +244,7 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 
 - ✅ **CI/CD 三方案** — Jenkins/GitLab CI + ArgoCD，全部可部署
 - ✅ **灰度发布** — Argo Rollouts Canary + BlueGreen
-- ✅ **可观测性** — Prometheus/Grafana/Loki/SkyWalking 完整配置 + 集群运行中
+- ✅ **可观测性** — Prometheus/Grafana/Loki 完整配置 + 集群运行中；**traces 已升级为 OpenTelemetry + Jaeger**（替换原 SkyWalking+ES，详见 `可观测性/05-otel/`）
 - ✅ **K8s 三基石** — HPA/PVC/Ingress 已落地验证
 - ✅ **密钥管理** — Sealed Secrets 实操验证 (kubeseal 加密 → 自动解密)
 - ✅ **证书管理** — cert-manager 自签 CA + 4 SAN 域名 TLS
@@ -249,9 +255,9 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 - ✅ **NFS Provisioner** — 自建动态供给，3 个 PVC 已绑定
 - ✅ **KEDA** — 事件驱动伸缩，Cron ScaledObject 工作日 9-18 扩缩
 - ✅ **Gateway API** — Envoy Gateway v1.2.0，80/20 金丝雀流量分割
-- ✅ **ES 集群** — 3 节点 StatefulSet，GREEN，含副本分片
+- ❌ **ES 集群** — 已卸载（2026-07-09）：SkyWalking 链路追踪改由 Jaeger 内存存储承接，ES 三节点 StatefulSet + PVC 全部删除，释放 worker 内存
 - ✅ **Loki 多租户** — auth_enabled + tenant_id + X-Scope-OrgID 隔离
 - ⏳ **Master 加内存** — 运维层面（P2c.10）
 - ✅ **eBPF 可观测性** — Cilium 接管 CNI(VXLAN) + Hubble 流量/DNS 可观测 + Grafana eBPF Dashboard（详见 `eBPF-可观测性/`）
 - ✅ **CNI 双资料** — Cilium 生产配置指南(含跨节点实测) + Calico 生产配置指南 + CNI 总览对比（详见 `eBPF-可观测性/Cilium-生产配置指南.md`、`Calico-配置指南/`、`CNI总览/`）
-📋 **长期任务** — OpenTelemetry / Chaos Mesh / Kyverno（eBPF 已完成）
+📋 **长期任务** — ✅ OpenTelemetry 已完成（替换 SkyWalking+ES）/ Chaos Mesh / Kyverno（eBPF 已完成）

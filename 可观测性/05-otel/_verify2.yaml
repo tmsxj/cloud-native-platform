@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: otlpgen
+  namespace: monitoring
+spec:
+  restartPolicy: Never
+  containers:
+  - name: c
+    image: 192.168.1.61/library/alpine_curl
+    command: ["sh", "-c"]
+    args:
+    - |
+      cat > /tmp/t.json <<'JSON'
+      {"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"manual-demo"}}]},"scopeSpans":[{"scope":{"name":"manual"},"spans":[{"traceId":"7bba9f33312b3dbb8b2c2c62bb7efe2d","spanId":"086e83747d0e381e","name":"manual-span","startTimeUnixNano":"1752037200000000000","endTimeUnixNano":"1752037201000000000","kind":1,"status":{}}]}]}]}
+      JSON
+      echo "=== POST trace to collector:4318/v1/traces ==="
+      curl -s -o /dev/null -w "http=%{http_code}\n" -X POST http://otel-collector.monitoring:4318/v1/traces -H "Content-Type: application/json" -d @/tmp/t.json
+      sleep 3
+      echo "=== JAEGER SERVICES ==="
+      curl -s http://jaeger.monitoring:16686/api/services; echo

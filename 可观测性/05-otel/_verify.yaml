@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: curltest
+  namespace: monitoring
+spec:
+  restartPolicy: Never
+  containers:
+  - name: c
+    image: 192.168.1.61/library/alpine_curl
+    command: ["sh", "-c"]
+    args:
+    - |
+      echo "=== JAEGER SERVICES (before) ==="
+      curl -s http://jaeger.monitoring:16686/api/services; echo
+      echo "=== HIT FRONTEND ==="
+      curl -s -o /dev/null -w "http=%{http_code}\n" http://frontend.monitoring:8080/
+      sleep 3
+      echo "=== JAEGER SERVICES (after) ==="
+      curl -s http://jaeger.monitoring:16686/api/services; echo

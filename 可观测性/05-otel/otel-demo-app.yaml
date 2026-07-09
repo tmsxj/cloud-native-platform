@@ -1,0 +1,73 @@
+# 演示应用：标准 OpenTelemetry trace 链路验证（替代原 SkyWalking 私有协议接入）
+# 镜像: 192.168.1.61/library/alpine_curl（Harbor 离线，含 curl + busybox，零运行时安装）
+# 行为: 每 5s 生成 1 条 trace(父 span process-order + 子 span db-query / call-payment)
+#       直接以 OTLP/HTTP(JSON) POST 到 otel-collector.monitoring:4318/v1/traces → Jaeger
+# 说明: 真实业务应使用官方 OTel SDK(Python/Java/Go)埋点并 OTLP 导出，此处用裸 OTLP/JSON 等价演示，
+#       规避离线环境 pip 安装 SDK 的偶发失败；标准 SDK 接入方式见 README。
+# 关键接线点: 只要把 OTLP 端点指向 otel-collector:4317/4318，后端是 Jaeger/Tempo 对业务透明。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-demo-app
+  namespace: monitoring
+  labels:
+    app: otel-demo-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-demo-app
+  template:
+    metadata:
+      labels:
+        app: otel-demo-app
+    spec:
+      containers:
+      - name: app
+        image: 192.168.1.61/library/alpine_curl
+        command: ["sh", "-c"]
+        args:
+        - |
+          hex() { head -c "$1" /dev/urandom | od -An -tx1 | tr -d ' \n'; }
+          gen() {
+            TRACE=$(hex 16)          # 16 字节 traceId = 32 hex
+            PID=$(hex 8)             # 8 字节 spanId  = 16 hex
+            C1=$(hex 8)
+            C2=$(hex 8)
+            NOW=$(($(date +%s) * 1000000000))
+            MID=$((NOW + 30000000))  # +30ms
+            END=$((NOW + 50000000))  # +50ms
+            cat > /tmp/t.json <<JSON
+          {"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"otel-demo-app"}}]},"scopeSpans":[{"scope":{"name":"demo"},"spans":[
+          {"traceId":"$TRACE","spanId":"$PID","name":"process-order","kind":1,"startTimeUnixNano":"$NOW","endTimeUnixNano":"$END","attributes":[{"key":"user.id","value":{"stringValue":"42"}}]},
+          {"traceId":"$TRACE","spanId":"$C1","parentSpanId":"$PID","name":"db-query","kind":1,"startTimeUnixNano":"$NOW","endTimeUnixNano":"$MID"},
+          {"traceId":"$TRACE","spanId":"$C2","parentSpanId":"$PID","name":"call-payment","kind":1,"startTimeUnixNano":"$NOW","endTimeUnixNano":"$MID"}
+          ]}]}]}
+          JSON
+            curl -s -o /dev/null -w "emit http=%{http_code}\n" -X POST http://otel-collector.monitoring:4318/v1/traces \
+              -H "Content-Type: application/json" -d @/tmp/t.json
+          }
+          echo "otel-demo-app: emitting traces to otel-collector:4318 every 5s"
+          while true; do gen; sleep 5; done
+        resources:
+          requests:
+            cpu: 50m
+            memory: 32Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-demo-app
+  namespace: monitoring
+  labels:
+    app: otel-demo-app
+spec:
+  selector:
+    app: otel-demo-app
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080

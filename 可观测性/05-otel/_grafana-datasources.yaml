@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: grafana
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus-server.monitoring:80
+        isDefault: true
+        editable: false
+        jsonData:
+          timeInterval: 15s
+      - name: Loki
+        type: loki
+        access: proxy
+        url: http://loki.monitoring:3100
+        editable: false
+        jsonData:
+          httpHeaderName1: X-Scope-OrgID
+        secureJsonData:
+          httpHeaderValue1: demo
+      - name: Jaeger
+        type: jaeger
+        access: proxy
+        url: http://jaeger.monitoring:16686
+        editable: false

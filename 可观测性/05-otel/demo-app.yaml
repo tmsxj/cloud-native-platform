@@ -1,0 +1,125 @@
+# 演示应用：用官方 OpenTelemetry 埋点的 frontend + loadgenerator 产生真实 trace
+# 镜像（Harbor 离线）:
+#   frontend:      192.168.1.61/gcr.io/google-samples/microservices-demo/frontend:v0.3.8
+#   loadgenerator: 192.168.1.61/gcr.io/google-samples/microservices-demo/loadgenerator:v0.3.8
+# frontend 通过 OTEL_EXPORTER_OTLP_ENDPOINT 把 trace 发往 OTel Collector → Jaeger
+# 说明: 仅部署 frontend+loadgenerator 两个 Pod 即可演示链路；其余后端服务缺失不影响
+#      frontend 产生 span（对缺失后端的调用会显示为 error span，正好演示链路可见性）
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: monitoring
+  labels:
+    app: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: 192.168.1.61/gcr.io/google-samples/microservices-demo/frontend:v0.3.8
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: PORT
+          value: "8080"
+        # 演示只部署 frontend+loadgenerator，后端服务地址用占位值满足 mustMapEnv 启动检查；
+        # 运行时对缺失后端的调用会失败并标记为 error span，正好演示链路可见性
+        - name: PRODUCT_CATALOG_SERVICE_ADDR
+          value: productcatalog:3550
+        - name: CURRENCY_SERVICE_ADDR
+          value: currency:7000
+        - name: CART_SERVICE_ADDR
+          value: cart:7070
+        - name: RECOMMENDATION_SERVICE_ADDR
+          value: recommendation:8080
+        - name: SHIPPING_SERVICE_ADDR
+          value: shipping:7000
+        - name: AD_SERVICE_ADDR
+          value: ad:9555
+        - name: CHECKOUT_SERVICE_ADDR
+          value: checkout:5050
+        - name: EMAIL_SERVICE_ADDR
+          value: email:5000
+        - name: PAYMENT_SERVICE_ADDR
+          value: payment:50051
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.monitoring:4318
+        - name: OTEL_EXPORTER_OTLP_PROTOCOL
+          value: http/protobuf
+        - name: OTEL_EXPORTER_OTLP_INSECURE
+          value: "true"
+        - name: OTEL_SERVICE_NAME
+          value: frontend
+        - name: OTEL_TRACES_EXPORTER
+          value: otlp
+        - name: OTEL_METRICS_EXPORTER
+          value: none
+        - name: OTEL_LOGS_EXPORTER
+          value: none
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: service.namespace=otel-demo,deployment.environment=demo
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 300m
+            memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: monitoring
+  labels:
+    app: frontend
+spec:
+  selector:
+    app: frontend
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgenerator
+  namespace: monitoring
+  labels:
+    app: loadgenerator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loadgenerator
+  template:
+    metadata:
+      labels:
+        app: loadgenerator
+    spec:
+      containers:
+      - name: loadgenerator
+        image: 192.168.1.61/gcr.io/google-samples/microservices-demo/loadgenerator:v0.3.8
+        env:
+        - name: FRONTEND_ADDR
+          value: frontend:8080
+        - name: LOCUST_WEB_PORT
+          value: "8089"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 300m
+            memory: 256Mi
