@@ -1,0 +1,49 @@
+# Chaos Mesh Helm values — worker 限定版（适配内存紧张的演示集群）
+# 适用: k8s 1.28 + Chaos Mesh 2.6.x
+#
+# 核心目的: chaos-daemon 是 DaemonSet，默认会落到每个节点（含 master）。
+# master 每节点仅 2.5G（占用 77-89%，余量极小），若放任 daemon 上 master 会顶到 ~94% 触发 OOM。
+# 方案: 给两个 worker 打标签 chaos-inject=true，用 nodeSelector 把 chaos-daemon 限定在 worker；
+#       目标应用（tomcat/otel-demo）均跑在 worker，故障注入能力不受影响。
+# （早期用 affinity.nodeAffinity 的写法被 chart 渲染到错误位置，未生效，故改 nodeSelector。）
+
+# ---- 先给 worker 打标签（一次即可，幂等）----
+# kubectl label nodes worker1 worker2 chaos-inject=true --overwrite
+
+chaosDaemon:
+  nodeSelector:
+    chaos-inject: "true"
+  tolerations: []            # 不要 Exists，否则会容忍 master 污点又跑回去
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+controllerManager:
+  nodeSelector:
+    chaos-inject: "true"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+dashboard:
+  nodeSelector:
+    chaos-inject: "true"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# 若节点出网受限无法拉取 ghcr.io 镜像，改为 Harbor 镜像（需先经外网资源同步推送）：
+# image:
+#   registry: 192.168.1.61:5000/chaos-mesh

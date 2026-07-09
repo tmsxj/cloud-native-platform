@@ -1,0 +1,19 @@
+# NetworkChaos — 给目标 Pod 的 egress 注入网络延迟，验证调用链耗时上升
+# 运行: kubectl apply -f network-delay.yaml
+# 停止: kubectl delete -f network-delay.yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-delay-demo
+  namespace: default          # ← 改成目标 Pod 所在命名空间
+spec:
+  action: delay
+  mode: one
+  selector:
+    labelSelectors:
+      app: tomcat-demo        # ← 改成目标 Pod 的 label
+  delay:
+    latency: "500ms"          # 注入 500ms 延迟
+    correlation: "100"
+    jitter: "50ms"
+  duration: "1m"              # 持续 1 分钟后自动停止

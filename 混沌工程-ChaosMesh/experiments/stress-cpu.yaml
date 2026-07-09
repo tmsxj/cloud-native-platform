@@ -1,0 +1,17 @@
+# StressChaos — 占满目标 Pod 的 CPU，验证 HPA / 监控告警
+# 运行: kubectl apply -f stress-cpu.yaml
+# 停止: kubectl delete -f stress-cpu.yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: stress-cpu-demo
+  namespace: default          # ← 改成目标 Pod 所在命名空间
+spec:
+  mode: one
+  selector:
+    labelSelectors:
+      app: tomcat-demo        # ← 改成目标 Pod 的 label
+  stressors:
+    cpu:
+      workers: 2              # 起 2 个线程占满 CPU
+  duration: "1m"              # 持续 1 分钟后自动停止
