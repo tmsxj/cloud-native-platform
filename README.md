@@ -132,7 +132,7 @@
 │   ├── 02-logs/                       ← Loki 日志聚合
 │   │   ├── log-alerting/              ← 日志分级告警 (3 条规则)
 │   │   └── loki-multitenant/          ← 多租户隔离
-│   ├── 03-traces/                     ← SkyWalking 链路追踪（已废弃，被 05-otel 替换）
+│   ├── 03-traces/                     ← SkyWalking 链路追踪（方案 A，manifest 保留；05-otel 为方案 B 当前运行）
 │   │   └── agent/                     ← Java Agent 无侵入注入
 │   ├── 04-es-storage/                 ← ES 3 节点集群（已卸载，追踪存储改 Tempo 对象存储）
 │   ├── 05-otel/                       ← ✅ OpenTelemetry + LGTM(Tempo+MinIO) 链路追踪（替换 SkyWalking+ES）
@@ -262,4 +262,4 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 - ⏳ **Master 加内存** — 运维层面（P2c.10）
 - ✅ **eBPF 可观测性** — Cilium 接管 CNI(VXLAN) + Hubble 流量/DNS 可观测 + Grafana eBPF Dashboard（详见 `eBPF-可观测性/`）
 - ✅ **CNI 双资料** — Cilium 生产配置指南(含跨节点实测) + Calico 生产配置指南 + CNI 总览对比（详见 `eBPF-可观测性/Cilium-生产配置指南.md`、`Calico-配置指南/`、`CNI总览/`）
-📋 **长期任务** — ✅ OpenTelemetry+LGTM 已完成（Tempo+MinIO 替换 SkyWalking+ES）/ Chaos Mesh / Kyverno（eBPF 已完成）
+📋 **长期任务** — ✅ OpenTelemetry+LGTM 已完成（LGTM 全栈 S3 化，方案 B 当前运行；方案 A=SkyWalking+ES manifest 保留）/ eBPF 已完成 / 下一步：Chaos Mesh → Kyverno
