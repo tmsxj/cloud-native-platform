@@ -8,7 +8,7 @@
 
 ## 这是什么？
 
-一套完整的 K8s DevOps 落地工程，从零搭建了 **Harbor(镜像仓库) + Jenkins/GitLab CI(持续集成) + ArgoCD(GitOps 持续部署) + Prometheus/Grafana/Loki/OpenTelemetry+Tempo(LGTM)(可观测性) + Argo Rollouts(灰度发布)**。
+一套完整的 K8s DevOps 落地工程，从零搭建了 **Harbor(镜像仓库) + Jenkins/GitLab CI(持续集成) + ArgoCD(GitOps 持续部署) + Prometheus/Grafana/Loki(S3)/OpenTelemetry+Tempo(LGTM 全栈 S3 化)(可观测性) + Argo Rollouts(灰度发布)**。
 
 可以作为 DevOps/SRE 岗位的 **面试作品** 或 **企业内部 DevOps 平台参考模板**。
 
@@ -50,7 +50,7 @@
         ┌─────────────────────────────────────────────────────────────────────┐
         │                        可观测性三大支柱 (可观测性)                │
         │  Metrics: Prometheus + AlertManager + NodeExporter                  │
-        │  Logs:    Loki + Promtail                                          │
+        │  Logs:    Loki(S3/MinIO 对象存储) + Promtail                       │
         │  Traces:  OpenTelemetry Collector + Tempo(S3/MinIO 对象存储, 对齐 LGTM)  │
         │  Panels:  Grafana (Dashboard JSON + 告警规则)                      │
         └─────────────────────────────────────────────────────────────────────┘
@@ -218,7 +218,7 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 | **密钥管理** | Sealed Secrets | kubeseal 加密 Harbor 凭据 → 自动解密 → Pod 注入 ✅ |
 | **证书管理** | cert-manager | 自签 CA → ClusterIssuer → TLS 证书自动颁发 ✅ |
 | **指标监控** | Prometheus + Grafana | 28 targets ALL UP + Cluster Overview Dashboard + 告警规则 |
-| **日志采集** | Loki + Promtail | 容器日志聚合搜索，trace_id 关联，多租户隔离 ✅ |
+| **日志采集** | Loki(S3) + Promtail | 容器日志聚合搜索，trace_id 关联，多租户隔离；存储已切 MinIO(S3) ✅ |
 | **链路追踪** | OpenTelemetry + Tempo(LGTM) | 标准 OTLP 收口（Collector :4317/4318）→ Tempo 单体(3.0) + MinIO(S3) 对象存储；Grafana 接 Tempo 数据源 ✅ |
 | **弹性伸缩** | KEDA + HPA | Cron 定时伸缩 + CPU 指标伸缩 ✅ |
 | **搜索存储** | Elasticsearch 3 节点集群 | ❌ 已卸载（2026-07-09）：trace 存储改 Tempo(对象存储)，释放 ~6Gi local-path + worker 内存 |
@@ -246,7 +246,7 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 
 - ✅ **CI/CD 三方案** — Jenkins/GitLab CI + ArgoCD，全部可部署
 - ✅ **灰度发布** — Argo Rollouts Canary + BlueGreen
-- ✅ **可观测性** — Prometheus/Grafana/Loki 完整配置 + 集群运行中；**traces 已升级为 OpenTelemetry + Tempo(LGTM)**（替换原 SkyWalking+ES，详见 `可观测性/05-otel/`）
+- ✅ **可观测性** — Prometheus/Grafana/Loki 完整配置 + 集群运行中；**traces 已升级为 OpenTelemetry + Tempo(LGTM)（替换原 SkyWalking+ES）**，**Loki 存储也已切到 MinIO(S3) 实现 LGTM 全栈 S3 化**（详见 `可观测性/05-otel/`）
 - ✅ **K8s 三基石** — HPA/PVC/Ingress 已落地验证
 - ✅ **密钥管理** — Sealed Secrets 实操验证 (kubeseal 加密 → 自动解密)
 - ✅ **证书管理** — cert-manager 自签 CA + 4 SAN 域名 TLS

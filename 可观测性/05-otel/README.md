@@ -2,10 +2,11 @@
 
 > 实战目标：用 **OpenTelemetry 标准栈** 收口 traces，并把后端对齐到 **LGTM** 业界标准组合
 > （**L**oki + **G**rafana + **T**empo + **M**imir/对象存储）。
-> 本期先完成 **T = Tempo + MinIO(S3)**，承接原 SkyWalking+ES 的链路追踪，并卸载 Elasticsearch 释放内存。
+> 本期先完成 **T = Tempo + MinIO(S3)**，承接原 SkyWalking+ES 的链路追踪，并卸载 Elasticsearch 释放内存；
+> 其后把 **L(Logs) = Loki** 的存储后端也从本地 filesystem 切到同一 MinIO(S3, bucket=loki)，实现 **LGTM 全栈 S3 化**。
 >
 > 📅 落地日期: 2026-07-09 | 集群: kubeadm 5 节点 | 命名空间: `monitoring`
-> 🔁 演进: 本目录先以 `Jaeger 内存版` 验证 OTLP 链路 → 再升级为 `Tempo + MinIO` 对齐 LGTM 生产标准（本文档为最终版）
+> 🔁 演进: 本目录先以 `Jaeger 内存版` 验证 OTLP 链路 → 再升级为 `Tempo + MinIO` 对齐 LGTM 生产标准 → 最后把 `Loki` 存储也切到同一 MinIO(S3) 实现全栈 S3 化（本文档为最终版）
 
 ---
 
@@ -46,6 +47,10 @@
 
   关键接线点：业务只需把 OTLP 端点指向 `otel-collector.monitoring:4317/4318`，
   后端是 Jaeger 还是 Tempo（内存/S3）对业务**完全透明**。
+
+  日志链路同样统一到 MinIO：
+  业务 Pod 日志 → Promtail → Loki(存储 backend: s3) ──► 同一 MinIO (S3, bucket=loki)
+  Grafana ◄── Loki 数据源（日志与 trace 经 trace_id 关联，LGTM 三支柱合一）
 ```
 
 ---
@@ -54,7 +59,7 @@
 
 | 文件 | 作用 | 镜像（Harbor 离线） |
 |------|------|---------------------|
-| [`minio.yaml`](./minio.yaml) | MinIO 对象存储（Tempo 的 S3 后端；Loki/Mimir 亦可复用同一实例） | `minio/minio:RELEASE.2025-09-07T16-13-09Z` + `minio/mc:latest`(建 bucket) |
+| [`minio.yaml`](./minio.yaml) | MinIO 对象存储（**Tempo 与 Loki 共用的 S3 后端**，统一对象存储） | `minio/minio:RELEASE.2025-09-07T16-13-09Z` + `minio/mc:latest`(建 bucket) |
 | [`tempo.yaml`](./tempo.yaml) | Grafana Tempo 单体（3.0, `-target=all`）：OTLP receiver + S3 存储 + 查询 :3200 | `grafana/tempo:latest` |
 | [`otel-collector.yaml`](./otel-collector.yaml) | OTel Collector 网关：接收 OTLP → 导出 Tempo + debug | `monitoring/opentelemetry-collector-contrib:0.152.1` |
 | [`otel-demo-app.yaml`](./otel-demo-app.yaml) | 演示应用：周期生成 trace 并经 OTLP/HTTP 投递到 Collector | `library/alpine:latest`(裸 curl，零运行时安装) |
@@ -190,3 +195,44 @@ Grafana 原生支持 `tempo` 数据源类型。在预置 ConfigMap `grafana-data
 4. **Tempo 3.0 配置范式变了**：`live_store` + `backend_scheduler` 替代旧 `ingester`/`compactor`；`storage.trace.backend: s3` 指向 MinIO，bucket 需预建（用 `mc` initContainer）。
 5. **scp 到 m1 `/tmp` 注意权限**：root 创建的文件非 root SSH 用户无法覆盖，须用新文件名或 scp 到用户目录再 sudo。
 6. **改 Collector 导出目标后务必 `kubectl apply` ConfigMap 再 `rollout restart`**：仅 restart 不会加载新 CM（曾因此连不上旧 Jaeger 报错）。
+
+---
+
+## 8.5 Loki 日志存储切到 MinIO S3（LGTM 全栈 S3 化）
+
+把 **L(Logs) 的存储后端从本地 filesystem 改为同一 MinIO(S3)**，使 Loki 与 Tempo 共用对象存储，LGTM 三支柱的 traces+logs 全部 S3 化（metrics 仍由 Prometheus 内存/本地承载）。
+
+**改动文件**：[`../02-logs/loki-multitenant/loki-multitenant.yaml`](../02-logs/loki-multitenant/loki-multitenant.yaml) 中的 `loki-config` ConfigMap：
+
+```yaml
+common:
+  path_prefix: /var/loki
+  storage:
+    s3:
+      endpoint: minio.monitoring:9000
+      access_key_id: minioadmin
+      secret_access_key: minioadmin
+      bucketnames: loki
+      s3forcepathstyle: true   # MinIO 用 path-style 寻址
+      insecure: true           # 走 http(9000) 而非 https
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: s3         # ← filesystem → s3
+compactor:
+  shared_store: s3             # ← filesystem → s3
+```
+
+**步骤**：
+1. `mc mb -p minio/loki`（在 MinIO 建 `loki` bucket，账号 minioadmin）
+2. `kubectl -n monitoring apply -f loki-multitenant.yaml`（更新 loki-config/promtail-config/grafana-datasources 三个 CM）
+3. `kubectl -n monitoring rollout restart sts loki`
+4. 等待 `loki.monitoring:3100/ready` 返回 200
+
+**验证 ✅**：
+- Loki 启动日志仅 `info` 级（`uploading tables`/`syncing tables`/`query readiness setup completed`），无 error/panic → S3 配置加载正常；
+- 主动 `POST /loki/api/v1/push` 一条测试日志（`test=s3migration`），再 `query` 可命中 → 写入+查询链路通；
+- MinIO `loki` bucket 出现 `fake/...` chunk 对象 → **日志真正持久化到 S3 对象存储**。
+
+> ⚠️ **踩坑**：Loki 切换存储后端（filesystem→s3）后，**旧的 filesystem 历史日志不可查**（两种后端的索引/数据格式不互通，旧 PVC 数据无法被 S3 读取）。这是预期副作用——新日志正常落 S3，只是切换前的老日志查不到了。因此切换时机应选在"历史日志可丢弃/POC"阶段；生产环境应在首次部署 Loki 时就直接用 S3，避免中途迁移丢历史。

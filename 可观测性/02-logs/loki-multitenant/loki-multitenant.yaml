@@ -24,9 +24,13 @@ data:
     common:
       path_prefix: /var/loki
       storage:
-        filesystem:
-          chunks_directory: /var/loki/chunks
-          rules_directory: /var/loki/rules
+        s3:
+          endpoint: minio.monitoring:9000
+          access_key_id: minioadmin
+          secret_access_key: minioadmin
+          bucketnames: loki
+          s3forcepathstyle: true   # MinIO 用 path-style 寻址
+          insecure: true           # 走 http(9000) 而非 https
       replication_factor: 1
       ring:
         kvstore:
@@ -35,7 +39,7 @@ data:
       configs:
         - from: 2024-01-01
           store: tsdb
-          object_store: filesystem
+          object_store: s3
           schema: v13
           index:
             prefix: loki_index_
@@ -56,7 +60,7 @@ data:
       alertmanager_url: http://alertmanager.monitoring:9093
     compactor:
       working_directory: /var/loki/compactor
-      shared_store: filesystem
+      shared_store: s3
       compaction_interval: 10m
       retention_enabled: true
       retention_delete_delay: 2h
