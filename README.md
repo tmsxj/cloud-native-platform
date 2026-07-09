@@ -139,6 +139,8 @@
 │   └── ...
 │
 ├── eBPF-可观测性/                      ← eBPF 可观测性 (Cilium 接管 CNI + Hubble 流量观测)
+├── CNI总览/                            ← Calico vs Cilium 生产配置对比（选型决策参考）
+├── Calico-配置指南/                    ← Calico 生产配置详解 + 故障排查（作 Cilium 回退备援资料）
 ├── 流量入口/                            ← Ingress 暴露 + cert-manager TLS + Gateway API 金丝雀
 ├── 密钥管理/                            ← Sealed Secrets 加密凭据落地
 ├── 镜像仓库/                            ← Harbor 自动清理策略
@@ -251,4 +253,5 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 - ✅ **Loki 多租户** — auth_enabled + tenant_id + X-Scope-OrgID 隔离
 - ⏳ **Master 加内存** — 运维层面（P2c.10）
 - ✅ **eBPF 可观测性** — Cilium 接管 CNI(VXLAN) + Hubble 流量/DNS 可观测 + Grafana eBPF Dashboard（详见 `eBPF-可观测性/`）
+- ✅ **CNI 双资料** — Cilium 生产配置指南(含跨节点实测) + Calico 生产配置指南 + CNI 总览对比（详见 `eBPF-可观测性/Cilium-生产配置指南.md`、`Calico-配置指南/`、`CNI总览/`）
 📋 **长期任务** — OpenTelemetry / Chaos Mesh / Kyverno（eBPF 已完成）
