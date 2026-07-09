@@ -1,0 +1,88 @@
+# 第 20 项 可靠性保障套件（K8s 原生）— 聚焦模式首批落地
+# 包含: PriorityClass(高/低优先级) + LimitRange + ResourceQuota + PDB + 演示负载
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority
+value: 1000000
+globalDefault: false
+description: "高优先级：核心/在线业务，驱逐时优先保留"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: batch-low-priority
+value: 100
+globalDefault: false
+description: "低优先级：批处理/可抢占任务，资源紧张时先被驱逐"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: reliability-demo
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: reliability-demo
+spec:
+  limits:
+  - default:
+      cpu: 500m
+      memory: 512Mi
+    defaultRequest:
+      cpu: 100m
+      memory: 128Mi
+    type: Container
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: default-quota
+  namespace: reliability-demo
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: 2Gi
+    limits.cpu: "4"
+    limits.memory: 4Gi
+    pods: "10"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-app
+  namespace: reliability-demo
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: demo-app
+  template:
+    metadata:
+      labels:
+        app: demo-app
+    spec:
+      priorityClassName: high-priority
+      containers:
+      - name: app
+        image: 192.168.1.61/library/nginx:1.25-alpine
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: demo-app-pdb
+  namespace: reliability-demo
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: demo-app
