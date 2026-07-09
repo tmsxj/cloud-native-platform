@@ -1,5 +1,6 @@
-# P1.6 — Skywalking Java Agent 注入 & 全链路追踪
+# P1.6 — Skywalking Java Agent 注入 & 全链路追踪（方案 A）
 
+> 📌 **方案 A 的 traces 探针**：本项目沉淀两套可观测性方案，本文档对应**方案 A（Prometheus + Loki + SkyWalking + Elasticsearch）**的 Java 链路追踪注入方式；方案 B 改用 **OTLP 埋点**（见 [`../../05-otel/README.md`](../../05-otel/README.md)）。两套 manifest 均保留，可对照学习。
 > 📅 2026-07-05 完成 | 验证状态: ✅ OAP 注册成功 + 调用链可视化
 
 ## 做了什么

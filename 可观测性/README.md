@@ -1,8 +1,30 @@
-# 监控配置管理 — 保存/删除/恢复手册
+# 可观测性总览与运维手册
+
+> 项目沉淀 **两套可观测性方案**，manifest 均保留在仓库，可独立部署 / 对照学习：
+> - **方案 A（初版 · 经典三件套）**：Prometheus + Loki + SkyWalking + Elasticsearch
+> - **方案 B（演进版 · LGTM + OTel）**：Prometheus + Loki + Grafana + Tempo + OTel Collector + MinIO(S3)
+>
+> 当前集群实际运行 **方案 B**（方案 A 的 SkyWalking / ES 为省资源已卸载，但 manifest 仍在，可随时切回）。
 
 ## 概述
 
-本目录包含 monitoring 命名空间所有组件的配置管理和操作脚本，按**可观测性三支柱**组织。
+本目录按**可观测性三支柱（Metrics / Logs / Traces）**组织，沉淀了**两套方案**，共享 Metrics 与 NFS 文件存储，差异在 Traces 链路与对象存储后端。两套均以 **Grafana** 为统一可视化入口。
+
+## 两套方案对照
+
+| 支柱 | 方案 A（初版 · 经典三件套） | 方案 B（演进版 · LGTM + OTel，当前运行） |
+|------|------|------|
+| **M**etrics | Prometheus + AlertManager + Grafana + node-exporter + kube-state-metrics + Pushgateway | 同（不变） |
+| **L**ogs | Loki（filesystem 本地 PVC）+ Promtail | Loki（MinIO S3, bucket=`loki`）+ Promtail |
+| **T**races | SkyWalking OAP/UI + Java Agent 注入 | OpenTelemetry Collector + Tempo（MinIO S3, bucket=`tempo`） |
+| 对象存储 | 无（ES 用 local-path PVC，见 `04-es-storage/`） | MinIO/S3（Tempo 与 Loki 共用，见 `05-otel/`） |
+| trace ↔ log 关联 | Grafana `derivedFields → SkyWalking` | Grafana `trace_id` 关联 Tempo + Loki |
+| 埋点方式 | SkyWalking Java Agent（`-javaagent`） | OTLP（应用直出 / 边车） |
+| 适用场景 | 传统开箱即用的成熟 APM | 云原生标准栈、统一 OTLP、S3 化降本 |
+
+> 💡 两套不是"新旧替代"，而是**同一种可观测性目标下的两种实现路径**：方案 A 让你掌握 SkyWalking/ES 这套成熟 APM；方案 B 让你对齐 CNCF LGTM 标准栈。学习时建议都跑一遍。
+
+**存储双栈**（详见下文「存储架构」）：文件存储走 **NFS**（Grafana/Prometheus 等 PVC），对象存储走 **MinIO/S3**（方案 B 的 Tempo/Loki chunk）。方案 A 的 Elasticsearch 走 local-path PVC，不占 NFS。
 
 **两阶段策略**：监控跑通 → 保存配置 → 删 Pod 腾资源 → 部署 CI/CD + 中间件 → 按需恢复监控。
 
@@ -11,20 +33,29 @@
 ```
 可观测性/
 ├── 01-metrics/                         # 📊 指标 — Prometheus + AlertManager + Grafana
-│   ├── prometheus-with-alerting.yml    #   Prometheus 采集配置
-│   ├── prometheus-alerting-rules.yml   #   15条告警规则
-│   ├── alertmanager.yml                #   Webhook 告警路由
-│   ├── alertmanager-email.yml          #   邮件告警通知
-│   └── webhook-examples.md             #   飞书/企微 IM 对接模板
-├── 02-logs/                            # 📜 日志 — Loki + Elasticsearch
-│   ├── elasticsearch-pvc.yaml          #   ES PVC 修复
-│   └── loki-pvc.yaml                   #   Loki PVC 修复
-├── 03-traces/                          # 🔍 追踪 — SkyWalking OAP + UI
-│   └── README.md                       #   预留，SkyWalking 配置后续补充
-├── scripts/                            # 🔧 运维脚本
-│   ├── save-monitoring.sh              #   一键保存
-│   ├── restore-monitoring.sh           #   一键恢复
-│   └── delete-monitoring.sh            #   一键删除 Pod
+│   ├── prometheus-with-alerting.yml    #   Prometheus 主配置（含告警规则引用）
+│   ├── prometheus-alerting-rules.yml   #   15 条告警规则（可读版）
+│   ├── alertmanager.yml                #   Webhook 路由
+│   ├── alertmanager-email.yml          #   邮件通知
+│   ├── grafana-dashboard-*.yaml        #   Dashboard Provider / K8s Overview
+│   ├── webhook-examples.md             #   飞书/企微 IM 对接模板
+│   └── servicemonitor/                 #   Prometheus Operator ServiceMonitor + CR
+├── 02-logs/                            # 📜 日志 — Loki(S3/MinIO) + Promtail
+│   ├── loki-multitenant/               #   Loki 多租户 (auth_enabled + tenant_id)
+│   ├── log-alerting/                   #   日志告警规则
+│   ├── loki-pvc.yaml                   #   Loki path_prefix 工作台 PVC
+│   └── elasticsearch-pvc.yaml          #   方案 A 的 ES 持久化 PVC（SkyWalking 依赖）
+├── 03-traces/                          # 🔍 追踪 — 方案 A 的 SkyWalking 组件（manifest 保留）
+│   ├── README.md                       #   方案 A traces 说明（SkyWalking）+ 与方案 B 对照
+│   └── agent/                          #   方案 A 的 SkyWalking Java Agent 注入
+├── 04-es-storage/                      # ⚠️ 方案 A 的 trace 存储后端（SkyWalking 依赖 ES）
+├── 05-otel/                            # 🚀 LGTM 演进 — OTel Collector + Tempo + MinIO
+│   ├── minio.yaml                      #   MinIO 对象存储（Tempo 与 Loki 共用 S3 后端）
+│   ├── tempo.yaml                      #   Tempo 3.0 单体（后端 MinIO S3）
+│   ├── otel-collector.yaml             #   OTel Collector 网关（OTLP 4317/4318）
+│   ├── _grafana-datasources.yaml       #   Grafana 数据源（Prometheus/Loki/Tempo）
+│   └── README.md                       #   LGTM 完整栈说明（最终版）
+├── scripts/                            # 🔧 运维脚本（save/delete/restore）
 ├── argocd/                             # ArgoCD 应用定义
 ├── backup-*/                           # 历史备份
 └── README.md                           # 本文件
@@ -73,10 +104,10 @@
 
 | 类型 | 数量 | 说明 |
 |------|------|------|
-| 数据源 | 2 | Prometheus (默认) + Loki (with derivedFields → SkyWalking) |
+| 数据源 | 3 | Prometheus（默认）+ Loki（logs）+ Tempo（traces，trace_id 关联） |
 | Dashboard | 11 | K8s 全套 + Node Exporter + Harbor + 日志-Trace 联动 |
 
-### 部署组件（19 个 Pod，按三支柱分组）
+### 部署组件（按三支柱 + 存储分组）
 
 #### 📊 Metrics（指标）
 | 组件 | 类型 | 说明 |
@@ -91,25 +122,65 @@
 #### 📜 Logs（日志）
 | 组件 | 类型 | 说明 |
 |------|------|------|
-| loki | StatefulSet | Loki 2.9.0 |
-| promtail | DaemonSet ×5 | 日志采集 |
-| elasticsearch | StatefulSet | SkyWalking trace 存储 |
+| loki | StatefulSet | Loki 2.9.0（`object_store: s3` → MinIO） |
+| promtail | DaemonSet ×5 | 日志采集（注入 `tenant_id: demo`） |
 
-#### 🔍 Traces（追踪）
+#### 🔍 Traces（追踪 · 方案 B，当前运行）
 | 组件 | 类型 | 说明 |
 |------|------|------|
-| skywalking-oap | Deployment | SkyWalking OAP 9.7.0 |
-| skywalking-ui | Deployment | SkyWalking UI |
+| otel-collector | Deployment | OpenTelemetry Collector 网关（OTLP 4317/4318） |
+| tempo | StatefulSet | Tempo 3.0（后端 MinIO S3） |
+| minio | Deployment | MinIO 对象存储（bucket: `tempo` / `loki`） |
+
+#### 🔍 Traces（追踪 · 方案 A，manifest 保留、当前未运行）
+| 组件 | 类型 | 说明 |
+|------|------|------|
+| skywalking-oap | Deployment | SkyWalking OAP Server（接 ES 存储，见 `04-es-storage/`） |
+| skywalking-ui | Deployment | SkyWalking UI（端口 8080） |
+| elasticsearch | StatefulSet ×3 | SkyWalking trace 存储后端（local-path PVC，已卸载省资源） |
+| tomcat-skywalking | Deployment | Tomcat 经 `-javaagent` 注入 SkyWalking Agent（见 `03-traces/agent/`） |
+
+> 📌 方案 A 的 SkyWalking OAP/UI、Elasticsearch 当前**未运行**（为省资源已卸载），manifest 仍保留于 `03-traces/`、`04-es-storage/`，可随时部署切回方案 A。两套 Traces **不可同时跑**（端口/追踪语义不同），切换时按需 scale 对应组件。
 
 ### PVC 占用
 
-| PVC | 大小 | 用途 |
-|-----|------|------|
-| prometheus-server | 50Gi | Prometheus TSDB |
-| grafana | 10Gi | Grafana 配置 + Dashboard |
-| loki-storage | 5Gi | Loki 日志存储 |
-| elasticsearch-data | 10Gi | Elasticsearch trace 数据 |
-| storage-alertmanager-0 | 50Mi | AlertManager 静默规则 |
+| PVC | 大小 | 后端 | 用途 |
+|-----|------|------|------|
+| grafana-nfs | 5Gi | NFS | Grafana 配置 + Dashboard |
+| prometheus-nfs | 30Gi | NFS | Prometheus TSDB |
+| tomcat-logs-pvc | 5Gi | NFS | Tomcat 应用日志 |
+| loki-storage | 5Gi | NFS/local-path | Loki `path_prefix` 本地工作台（compactor 临时目录） |
+| storage-alertmanager-0 | 50Mi | NFS | AlertManager 静默规则 |
+
+> MinIO（Tempo/Loki 的真实对象落盘）使用 Pod 本地盘 / emptyDir，**不占 NFS PVC**；对象以 bucket 形式存在 MinIO 中。
+
+---
+
+## 存储架构（NFS 文件存储 + MinIO 对象存储 双栈）
+
+本项目的可观测性数据由**两套互补的存储**承载，二者不是替代关系，而是不同抽象层：
+
+### 1️⃣ NFS — 文件存储（给 Pod 一块共享磁盘）
+
+- **位置**：`存储管理/`（`nfs-provisioner.yaml` + README）
+- **实现**：自建 external provisioner，StorageClass `nfs-client`，后端 `h1:/srv/nfs-k8s`（Harbor 物理机）
+- **协议**：NFS v4.1，`hard` mount + `timeo=600`（防网络抖动丢 IO）
+- **特点**：POSIX 文件系统语义，支持 `ReadWriteMany`（多 Pod 跨节点共享）
+- **用途**：Grafana 配置、Prometheus TSDB、Tomcat 日志等**需要文件系统语义**的有状态数据
+- **已用 PVC**：`grafana-nfs`(5Gi) / `prometheus-nfs`(30Gi) / `tomcat-logs-pvc`(5Gi) / `loki-storage`(5Gi)
+
+### 2️⃣ MinIO — 对象存储（给应用一个 S3 对象桶）
+
+- **位置**：`05-otel/minio.yaml`（详见 `05-otel/README.md`）
+- **实现**：MinIO 单体（兼容 S3 API），运行于 `monitoring` 命名空间
+- **访问**：应用通过 HTTP REST（`mc`/`aws cli`/SDK）调用，非 K8s 卷挂载
+- **特点**：扁平 key 模型（bucket + key + object），适合一次写多次读、不可变、海量的 chunk/段
+- **用途**：Tempo trace 索引/段、Loki chunk —— **Tempo 与 Loki 共用同一 MinIO 实例**
+- **bucket**：`tempo`（trace）、`loki`（log chunk）
+
+### 为什么可观测性这么分
+
+Trace/Log chunk 是「一次写、多次读、不可变、海量、按时间分块」的数据，天然适配对象存储的扁平 key 模型（便于生命周期管理、水平扩展、与 S3 生态对齐）；而 Grafana/Prometheus 需要「随机读写、目录层级、原子重命名」的文件系统语义，挂 NFS 盘最省事。**NFS 给"Pod 一块共享磁盘"，MinIO 给"应用一个 S3 对象桶"，在 LGTM 栈里恰好互补。**
 
 ---
 
@@ -129,60 +200,35 @@ bash scripts/save-monitoring.sh
 $ns = "monitoring"
 $backup = "f:/项目管理2026/项目实战/可观测性/backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 New-Item -ItemType Directory -Path $backup -Force | Out-Null
-New-Item -ItemType Directory -Path "$backup/configmaps" -Force | Out-Null
-New-Item -ItemType Directory -Path "$backup/secrets" -Force | Out-Null
-New-Item -ItemType Directory -Path "$backup/services" -Force | Out-Null
-New-Item -ItemType Directory -Path "$backup/deployments" -Force | Out-Null
-New-Item -ItemType Directory -Path "$backup/statefulsets" -Force | Out-Null
-New-Item -ItemType Directory -Path "$backup/daemonsets" -Force | Out-Null
-New-Item -ItemType Directory -Path "$backup/pvc" -Force | Out-Null
-
-# 导出 ConfigMap
+# ...（同原脚本，导出 configmaps/secrets/deployments/statefulsets/daemonsets/pvc/services）
 kubectl get configmap prometheus-server -n $ns -o yaml > "$backup/configmaps/prometheus-server.yaml"
 kubectl get configmap alertmanager -n $ns -o yaml > "$backup/configmaps/alertmanager.yaml"
 kubectl get configmap grafana -n $ns -o yaml > "$backup/configmaps/grafana.yaml"
 kubectl get configmap loki-config -n $ns -o yaml > "$backup/configmaps/loki-config.yaml"
 kubectl get configmap promtail-config -n $ns -o yaml > "$backup/configmaps/promtail-config.yaml"
-
-# 导出 Secret
-kubectl get secret grafana -n $ns -o yaml > "$backup/secrets/grafana.yaml"
-
-# 导出所有 Deployment/StatefulSet/DaemonSet/Service/PVC/Ingress
-kubectl get deployment -n $ns -o yaml > "$backup/deployments/all.yaml"
-kubectl get statefulset -n $ns -o yaml > "$backup/statefulsets/all.yaml"
-kubectl get daemonset -n $ns -o yaml > "$backup/daemonsets/all.yaml"
-kubectl get service -n $ns -o yaml > "$backup/services/all.yaml"
-kubectl get pvc -n $ns -o yaml > "$backup/pvc/all.yaml"
-kubectl get ingress -n $ns -o yaml > "$backup/ingress.yaml"
-
+kubectl get configmap otel-collector-config -n $ns -o yaml > "$backup/configmaps/otel-collector-config.yaml"
+kubectl get configmap tempo-config -n $ns -o yaml > "$backup/configmaps/tempo-config.yaml"
+kubectl get configmap minio-config -n $ns -o yaml > "$backup/configmaps/minio-config.yaml"
 Write-Host "✅ 备份完成: $backup"
 ```
 
 ### 第二步：删除 Pod（保留配置）
 
-```bash
-# Linux/Mac/Git Bash
-bash scripts/delete-monitoring.sh
-```
-
-**Windows PowerShell（逐条执行）**:
+> 注意：以下为 **方案 B（当前运行）** 的操作命令。切换回 **方案 A** 时，需改 scale `skywalking-oap`/`skywalking-ui`/`elasticsearch` 并注入 Tomcat Agent（见 `03-traces/`、`04-es-storage/`），两套 Traces 不可同时运行。
 
 ```powershell
 $ns = "monitoring"
-
 # 缩容 Deployment
 kubectl scale deployment prometheus-server -n $ns --replicas=0
 kubectl scale deployment grafana -n $ns --replicas=0
 kubectl scale deployment kube-state-metrics -n $ns --replicas=0
 kubectl scale deployment prometheus-prometheus-pushgateway -n $ns --replicas=0
-kubectl scale deployment skywalking-oap -n $ns --replicas=0
-kubectl scale deployment skywalking-ui -n $ns --replicas=0
-
+kubectl scale deployment otel-collector -n $ns --replicas=0
 # 缩容 StatefulSet
 kubectl scale statefulset alertmanager -n $ns --replicas=0
-kubectl scale statefulset elasticsearch -n $ns --replicas=0
 kubectl scale statefulset loki -n $ns --replicas=0
-
+kubectl scale statefulset tempo -n $ns --replicas=0
+kubectl scale deployment minio -n $ns --replicas=0
 # 删除 DaemonSet
 kubectl delete daemonset promtail -n $ns
 kubectl delete daemonset node-exporter-prometheus-node-exporter -n $ns
@@ -190,73 +236,68 @@ kubectl delete daemonset node-exporter-prometheus-node-exporter -n $ns
 
 ### 第三步：恢复监控
 
-```bash
-# Linux/Mac/Git Bash
-bash scripts/restore-monitoring.sh
-```
-
-**Windows PowerShell（逐条执行）**:
-
 ```powershell
 $ns = "monitoring"
-
-# 恢复 DaemonSet（先启动采集器）
-kubectl apply -f "f:/项目管理2026/项目实战/可观测性/backup-*/daemonsets/all.yaml"
-
-# 恢复 StatefulSet
 kubectl scale statefulset alertmanager -n $ns --replicas=1
-kubectl scale statefulset elasticsearch -n $ns --replicas=1
 kubectl scale statefulset loki -n $ns --replicas=1
-
-# 恢复 Deployment
+kubectl scale statefulset tempo -n $ns --replicas=1
+kubectl scale deployment minio -n $ns --replicas=1
 kubectl scale deployment prometheus-server -n $ns --replicas=1
 kubectl scale deployment grafana -n $ns --replicas=1
 kubectl scale deployment kube-state-metrics -n $ns --replicas=1
 kubectl scale deployment prometheus-prometheus-pushgateway -n $ns --replicas=1
-kubectl scale deployment skywalking-oap -n $ns --replicas=1
-kubectl scale deployment skywalking-ui -n $ns --replicas=1
+kubectl scale deployment otel-collector -n $ns --replicas=1
 ```
+
+> ⚠️ **执行顺序**：先起 MinIO → Tempo/Loki（依赖 S3）→ OTel Collector → Prometheus/Grafana/Promtail。
 
 ---
 
 ## 配置修改记录
 
+### 2026-07-09 LGTM 演进（长期17 完成）
+
+1. **Traces 替换**：OpenTelemetry Collector + Tempo（MinIO S3 后端）替换 SkyWalking + Elasticsearch，对齐 LGTM 生产标准
+2. **卸载 Elasticsearch**：释放约 6Gi+ worker 内存；SkyWalking OAP/UI 一并卸载
+3. **Grafana 数据源**：`derivedFields → SkyWalking` 改为接入 **Tempo**（trace_id 关联 Logs/Traces）
+4. **Loki 存储 S3 化**：`common.storage` + `schema_config.object_store` + `compactor.shared_store` 由 `filesystem` → `s3`（MinIO bucket=`loki`），**LGTM 全栈 S3 化**
+5. **MinIO 复用**：Tempo 与 Loki 共用同一 MinIO 实例（bucket 隔离），统一对象存储后端
+6. 详见 [`05-otel/README.md`](./05-otel/README.md)
+
+### 2026-07-06 Loki 多租户（P2b.13）
+
+- `auth_enabled: true` + Promtail `tenant_id: demo` + Grafana `X-Scope-OrgID: demo`，验证 demo/fake 租户隔离
+- 详见 [`02-logs/loki-multitenant/README.md`](./02-logs/loki-multitenant/README.md)
+
+### 2026-07-05 存储管理 + SkyWalking Agent（P2a.14 / P1.6）
+
+- NFS Provisioner 动态供给（StorageClass `nfs-client` → PVC → Bound）
+- SkyWalking Java Agent 注入 Tomcat（**方案 A** 的 traces 探针；方案 B 改用 OTLP 埋点，见 `05-otel/`）
+
 ### 2026-07-03 资源优化
 
-1. **SkyWalking OAP 内存控制** — `JAVA_OPTS=-Xms512m -Xmx1024m`，资源 requests: 500m CPU/1Gi，limits: 1.5 CPU/1.5Gi
-2. **全组件资源注入** — Grafana、SkyWalking UI、Loki、AlertManager、kube-state-metrics、Pushgateway 全部加上 requests/limits
-3. **Prometheus 保留期** — 15d → 7d（`--storage.tsdb.retention.time=7d`）
-4. **备份补全 ServiceAccount** — 新备份 `backup-20260703-optimized` 含 SA
-5. **清理 snownlp 残留** — 旧备份中 loadgen-script、snownlp-demo-app 已删除
-6. **目录重组** — 按三支柱（01-metrics / 02-logs / 03-traces）分组
+1. **全组件资源注入** — Grafana、Loki、AlertManager 等加 requests/limits
+2. **Prometheus 保留期** — 15d → 7d（`--storage.tsdb.retention.time=7d`）
+3. **备份补全 ServiceAccount**
+4. **目录重组** — 按三支柱（01-metrics / 02-logs / 03-traces）分组
 
-### 2026-06-23 新增
+### 2026-06-23 告警 + 持久化
 
-1. **Prometheus 告警规则** (`prometheus-server` ConfigMap → `alerting_rules.yml`)
-   - 15 条规则覆盖节点/Pod/Deployment/StatefulSet/PVC/Prometheus 自身
+1. **Prometheus 15 条告警规则** + AlertManager 路由/抑制/webhook
+2. **邮件告警** — QQ 邮箱 SMTP（smtp.qq.com:587）
+3. **Loki / Elasticsearch 持久化** — 新建 PVC 替换 emptyDir
 
-2. **AlertManager 路由配置** (`alertmanager` ConfigMap → `alertmanager.yml`)
-   - 按 severity 分组路由，抑制规则，webhook receiver
+---
 
-3. **Prometheus alerting 地址** — 补上遗漏的 `alertmanagers → alertmanager.monitoring:9093`
-
-4. **邮件告警** — QQ 邮箱 SMTP（smtp.qq.com:587），三级路由全部验证通过
-
-### 2026-06-23 修复（三支柱补齐）
-
-1. **Loki 持久化存储** — 新建 PVC `loki-storage` (5Gi)，替换 emptyDir
-2. **Elasticsearch 持久化存储** — 新建 PVC `elasticsearch-data` (10Gi)，替换 emptyDir
-3. **Loki 日志告警** — `ruler.alertmanager_url: http://alertmanager.monitoring:9093`
-
-### 待完成
+## 待完成
 
 | 项目 | 说明 |
 |------|------|
-| ~~飞书/企微集成~~ | ~~部署 prometheus-webhook-dingtalk~~ → [配置案例文档](01-metrics/webhook-examples.md) 已完成 |
-| Grafana Dashboard 导出 | 通过 API 导出 JSON（`scripts/save-monitoring.sh` 第8步） |
-| ~~系统日志采集~~ | ~~Promtail 采集 kubelet/containerd 日志~~ → 已完成（host-logs / kubelet-logs / docker-daemon-logs） |
+| Grafana Dashboard 导出 | 通过 API 导出 JSON（`scripts/save-monitoring.sh`） |
 | 系统日志 journald 补齐 | kubelet/containerd 在 systemd 下走 journald，需 journal stage |
-| 更多应用 trace 埋点 | ingress-nginx 等服务的 SkyWalking 探针 |
+| 更多应用 OTLP 埋点 | ingress-nginx 等服务的 OTel 探针（替代原 SkyWalking 探针） |
+| MinIO 生产加固 | 多盘/纠删码、TLS、access key 轮换（当前单副本演示） |
+| 告警接收器落地 | webhook-dummy 替换为飞书/企微真实地址（见 `01-metrics/webhook-examples.md`） |
 
 ---
 
@@ -266,31 +307,48 @@ kubectl scale deployment skywalking-ui -n $ns --replicas=1
 | 文件 | 用途 |
 |------|------|
 | `01-metrics/prometheus-with-alerting.yml` | Prometheus 主配置（含告警规则引用） |
-| `01-metrics/prometheus-alerting-rules.yml` | Prometheus 告警规则（15条，可读版本） |
+| `01-metrics/prometheus-alerting-rules.yml` | Prometheus 告警规则（15 条，可读版本） |
 | `01-metrics/alertmanager.yml` | AlertManager 配置（Webhook 路由） |
 | `01-metrics/alertmanager-email.yml` | AlertManager 邮件通知配置 |
+| `01-metrics/grafana-dashboard-*.yaml` | Dashboard Provider / K8s Overview |
 | `01-metrics/webhook-examples.md` | 飞书+企业微信 webhook 配置案例 |
+| `01-metrics/servicemonitor/` | Prometheus Operator ServiceMonitor + CR |
 
 ### 📜 02-logs（日志）
 | 文件 | 用途 |
 |------|------|
-| `02-logs/elasticsearch-pvc.yaml` | Elasticsearch PVC 修复 |
-| `02-logs/loki-pvc.yaml` | Loki PVC 修复 |
+| `02-logs/loki-multitenant/README.md` | Loki 多租户（auth_enabled + tenant_id） |
+| `02-logs/log-alerting/` | 日志告警规则 |
+| `02-logs/loki-pvc.yaml` | Loki `path_prefix` 工作台 PVC |
+| `02-logs/elasticsearch-pvc.yaml` | 方案 A 的 ES 持久化 PVC（SkyWalking 依赖；当前未用） |
 
-### 🔍 03-traces（追踪）
+### 🔍 03-traces（方案 A 的 SkyWalking 组件 · manifest 保留）
 | 文件 | 用途 |
 |------|------|
-| `03-traces/README.md` | 预留，SkyWalking 配置后续补充 |
+| `03-traces/README.md` | 方案 A traces 说明（SkyWalking）+ 与方案 B 对照 |
+| `03-traces/agent/README.md` | 方案 A 的 SkyWalking Java Agent 注入（Tomcat `-javaagent`） |
+| `03-traces/agent/tomcat-skywalking-deploy.yaml` | SkyWalking Agent 注入后的 Tomcat 部署清单 |
 
-### 🔧 scripts（运维脚本）
+### 🗄️ 04-es-storage（方案 A 的 trace 存储后端）
 | 文件 | 用途 |
+|------|------|
+| `04-es-storage/es-cluster.yaml` | ES 3 节点集群（SkyWalking trace 存储） |
+| `04-es-storage/README.md` | ES 集群部署 / 踩坑 / 面试要点 |
+
+### 🚀 05-otel（LGTM 演进 · 当前形态）
+| 文件 | 用途 |
+|------|------|
+| `05-otel/minio.yaml` | MinIO 对象存储（Tempo 与 Loki 共用 S3 后端） |
+| `05-otel/tempo.yaml` | Tempo 3.0 单体（后端 MinIO S3） |
+| `05-otel/otel-collector.yaml` | OTel Collector 网关（OTLP 4317/4318） |
+| `05-otel/_grafana-datasources.yaml` | Grafana 数据源（Prometheus/Loki/Tempo） |
+| `05-otel/README.md` | LGTM 完整栈说明（最终版） |
+
+### 🔧 scripts / 其他
+| 文件/目录 | 用途 |
 |------|------|
 | `scripts/save-monitoring.sh` | 一键保存脚本 |
 | `scripts/delete-monitoring.sh` | 一键删除 Pod 脚本 |
 | `scripts/restore-monitoring.sh` | 一键恢复脚本 |
-
-### 其他
-| 文件/目录 | 用途 |
-|------|------|
 | `argocd/application.yaml` | ArgoCD 应用定义 |
 | `backup-*/` | 备份输出目录 |

@@ -1,5 +1,6 @@
-# P2b.12 — Elasticsearch 3 节点集群
+# P2b.12 — Elasticsearch 3 节点集群（方案 A 的 trace 存储后端）
 
+> 📌 **方案 A 的存储组件**：Elasticsearch 是**方案 A（SkyWalking）**的 trace 存储后端，当前未运行（为省资源已卸载，释放约 6Gi+ worker 内存），但 manifest（`es-cluster.yaml`）仍保留，可随时部署切回方案 A。方案 B 的 traces 改用 **Tempo + MinIO S3**（见 [`../05-otel/README.md`](../05-otel/README.md)）。
 > 📅 2026-07-06 完成 | 验证状态: ✅ 3 节点 GREEN | sw_metrics/sw_records 含 replica
 
 ## 做了什么
