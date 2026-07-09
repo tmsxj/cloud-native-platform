@@ -1,0 +1,166 @@
+# Grafana Tempo（LGTM 中的 T 组件：分布式追踪后端，OTel Collector 的标准导出目标）
+# 镜像: 192.168.1.61/grafana/tempo:latest（Tempo 3.0 单体模式 -target=all）
+# 存储: S3(MinIO)，bucket=tempo —— 替代原 Jaeger 内存版，对齐 LGTM 生产标准（对象存储 + 持久化）
+# 端口: 3200(查询/UI API) 4317(OTLP gRPC) 4318(OTLP HTTP)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tempo
+  namespace: monitoring
+data:
+  tempo.yaml: |
+    # Tempo 3.0 单体模式：live-store 写路径 + backend-scheduler 压缩，替代旧 ingester/compactor
+    stream_over_http_enabled: true
+
+    server:
+      http_listen_port: 3200
+
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            http:
+              endpoint: "0.0.0.0:4318"
+            grpc:
+              endpoint: "0.0.0.0:4317"
+
+    live_store:
+      max_trace_idle: 10s
+      max_block_duration: 5m
+      max_block_bytes: 1000000
+
+    backend_scheduler:
+      provider:
+        compaction:
+          compaction:
+            compaction_window: 1h
+            max_block_bytes: 100000000
+            block_retention: 24h
+            compacted_block_retention: 10m
+
+    storage:
+      trace:
+        backend: s3
+        s3:
+          endpoint: minio.monitoring:9000
+          access_key: minioadmin
+          secret_key: minioadmin
+          bucket: tempo
+          insecure: true
+        pool:
+          max_workers: 100
+          queue_depth: 10000
+
+    metrics_generator:
+      registry:
+        collection_interval: 5s
+        external_labels:
+          source: tempo
+      storage:
+        path: /tmp/tempo/generator/wal
+      processor:
+        span_metrics:
+          dimensions:
+            - http.status_code
+        service_graphs:
+          dimensions:
+            - http.status_code
+
+    overrides:
+      defaults:
+        metrics_generator:
+          processors: [service-graphs, span-metrics]
+
+    usage_report:
+      reporting_enabled: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tempo
+  namespace: monitoring
+  labels:
+    app: tempo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tempo
+  template:
+    metadata:
+      labels:
+        app: tempo
+    spec:
+      # 用 mc 初始化 MinIO bucket（等待 minio 就绪后建 tempo bucket）
+      initContainers:
+      - name: create-bucket
+        image: 192.168.1.61/minio/mc:latest
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          until mc alias set myminio http://minio.monitoring:9000 minioadmin minioadmin 2>/dev/null; do
+            echo "waiting for minio..."; sleep 3
+          done
+          mc mb --ignore-existing myminio/tempo
+          echo "tempo bucket ready"
+      containers:
+      - name: tempo
+        image: 192.168.1.61/grafana/tempo:latest
+        args: ["-config.file=/etc/tempo/tempo.yaml", "-target=all"]
+        volumeMounts:
+        - name: config
+          mountPath: /etc/tempo
+        ports:
+        - containerPort: 3200
+          name: http
+        - containerPort: 4317
+          name: otlp-grpc
+        - containerPort: 4318
+          name: otlp-http
+        - containerPort: 9095
+          name: grpc
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: "1"
+            memory: 1Gi
+        livenessProbe:
+          httpGet:
+            path: /ready
+            port: 3200
+          initialDelaySeconds: 25
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 3200
+          initialDelaySeconds: 25
+      volumes:
+      - name: config
+        configMap:
+          name: tempo
+          items:
+          - key: tempo.yaml
+            path: tempo.yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tempo
+  namespace: monitoring
+  labels:
+    app: tempo
+spec:
+  selector:
+    app: tempo
+  ports:
+  - name: http
+    port: 3200
+    targetPort: 3200
+  - name: otlp-grpc
+    port: 4317
+    targetPort: 4317
+  - name: otlp-http
+    port: 4318
+    targetPort: 4318

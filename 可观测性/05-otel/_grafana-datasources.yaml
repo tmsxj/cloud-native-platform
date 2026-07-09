@@ -26,8 +26,8 @@ data:
           httpHeaderName1: X-Scope-OrgID
         secureJsonData:
           httpHeaderValue1: demo
-      - name: Jaeger
-        type: jaeger
+      - name: Tempo
+        type: tempo
         access: proxy
-        url: http://jaeger.monitoring:16686
+        url: http://tempo.monitoring:3200
         editable: false
