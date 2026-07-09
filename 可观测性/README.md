@@ -301,6 +301,48 @@ kubectl scale deployment otel-collector -n $ns --replicas=1
 
 ---
 
+## 演示环境 vs 生产环境（差距与标准做法）
+
+> 📌 **定位**：本项目当前是**演示 / 学习级单副本**实现——**架构选型已对齐企业生态**（LGTM + OTel + 对象存储分层），但**工程落地还差一截**（缺 HA、长期存储、真实告警、安全加固、SLO）。本节能讲清「为什么这么选、生产还差什么」，比只说"搭了 LGTM"更有价值。可作为后续演进的基础。
+
+### 差距对照表
+
+| 维度 | 本项目（演示级） | 企业生产标准 |
+|------|------|------|
+| 高可用 | Prometheus / Grafana / Loki / Tempo / MinIO 全为**单副本** | 核心组件多副本或 HA（Prometheus 配 Sidecar + Thanos；Grafana ≥2 副本） |
+| 指标长期存储 | Prometheus 7d 保留、本地 NFS TSDB | 接 Thanos / Mimir / Cortex，长期存储 + 降采样，保留数月~年 |
+| 对象存储 | MinIO 单副本、无纠删码 / TLS、access key 明文在 CM | 多盘纠删码或直接使用云厂商 S3（S3/GCS），启用 TLS + key 轮换 |
+| 日志生命周期 | MinIO bucket 无过期策略 | 对象存储配 lifecycle 规则（热/冷分层 + 自动过期） |
+| 告警落地 | webhook 指向 `webhook-dummy` | 真实接飞书 / 企微 / 电话，配静默、值班路由（on-call） |
+| 安全 | Grafana 默认 admin、MinIO key 在 ConfigMap | SSO/LDAP、Secret 管理（Vault / External Secrets）、NetworkPolicy 隔离 |
+| SLO / SLI | 仅资源级告警 | 业务 SLO + 错误预算燃烧率告警（Multiwindow Burn-Rate） |
+| Trace 采样 | OTel Collector 无显式采样 | tail-based sampling 防 trace 爆炸，关键链路全采、低频链路抽样 |
+| 备份 / DR | 仅 `scripts/save` 导出 yaml | PV 快照 + GitOps 配置即代码 + 定期恢复演练 |
+| 端点暴露 | 可观测性端点未走 Ingress/TLS | Grafana / 端点经 Ingress + TLS，最小化对外暴露 |
+
+### 生产环境下标准做法（按组件）
+
+- **Metrics**：Prometheus Operator 托管；Thanos Sidecar + 对象存储做全局视图与长期保留；Recording Rule 预聚合降负载；多副本 AlertManager。
+- **Logs**：Loki 生产直接用云 S3（或 MinIO 纠删码集群）；`compactor` 与 `index` 分离；按 namespace/租户设 retention；日志告警接 AlertManager。
+- **Traces**：Tempo 后端接云 S3；OTel Collector 部署为 **Gateway + Agent 两层**，Gateway 做 tail-based sampling 与批处理；高吞吐时 Collector 水平扩容。
+- **可视化**：Grafana 多副本 + 数据库外置（PostgreSQL）；接入 SSO；DataSource/ Dashboard 用 Terraform 或 GitOps 管理。
+- **告警**：AlertManager 接真实 IM（飞书/企微）与 on-call（如 PagerDuty）；基于 SLO 的燃烧率告警；重要告警电话兜底。
+- **安全**：所有 Secret 走 External Secrets Operator 从 Vault/云密钥管理同步；Grafana/MinIO 启用 TLS；NetworkPolicy 限制组件间访问。
+- **可靠性**：核心组件配 PDB（PodDisruptionBudget）+ 反亲和；PV 用快照备份；用 ArgoCD 做 GitOps 持续同步。
+
+### 演进路线（优先级建议）
+
+1. **告警真实落地**（飞书/企微）—— 投入小、感知强，先把 `webhook-dummy` 换掉
+2. **对象存储加固** —— MinIO 纠删码 / 换云 S3 + 日志 lifecycle 过期，消除单点丢数据风险
+3. **指标长期存储** —— Prometheus 接 Thanos/Mimir，解决 7d 保留太短
+4. **关键组件 HA** —— Grafana / AlertManager / Collector 多副本 + PDB
+5. **安全加固** —— Grafana SSO + Secret 管理 + NetworkPolicy
+6. **SLO 体系** —— 从资源告警升级到业务 SLO 燃烧率告警
+
+> 以上为**演进 checklist**，可按实际资源逐步补齐；本项目作为基础架构已具备正确的选型与清晰的扩展路径。
+
+---
+
 ## 文件清单
 
 ### 📊 01-metrics（指标）
