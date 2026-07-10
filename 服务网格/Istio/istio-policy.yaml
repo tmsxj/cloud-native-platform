@@ -1,0 +1,50 @@
+# Istio 流量治理 + mTLS 策略（Istio 区别于 Linkerd 的核心能力）
+# 1) PeerAuthentication STRICT：命名空间内强制 mTLS
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-demo
+spec:
+  mtls:
+    mode: STRICT
+---
+# 2) DestinationRule：连接池限制 + 熔断（离群检测）
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: nginx-backend
+  namespace: istio-demo
+spec:
+  host: nginx-backend
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 1
+      http:
+        http1MaxPendingRequests: 1
+        maxRequestsPerConnection: 1
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 100
+---
+# 3) VirtualService：重试 + 超时（故障容错）
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: nginx-backend
+  namespace: istio-demo
+spec:
+  hosts:
+  - nginx-backend
+  http:
+  - route:
+    - destination:
+        host: nginx-backend
+    timeout: 5s
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+      retryOn: 5xx,reset,connect-failure,refused-stream

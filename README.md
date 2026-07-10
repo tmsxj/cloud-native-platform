@@ -2,7 +2,7 @@
 
 > 基于自建 5 节点 K8s 集群的 DevOps 实战项目，覆盖 **CI/CD 三方案 → 可观测性三大支柱 → 灰度发布 → K8s 三基石** 全链路。
 >
-> 📅 最近更新: 2026-07-10 10:20 | 状态: P0~P2b + 长期16~19 全部完成 ✅ | 后续增强 20 可靠性保障 ✅ / 21 Velero 备份容灾 ✅ / 22 Falco 运行时安全 ✅ | 🔒 聚焦模式已激活（全家桶冻结，专攻 23~31）；集群已开机，Cilium/Hubble(eBPF) 栈健康
+> 📅 最近更新: 2026-07-10 12:35 | 状态: P0~P2b + 长期16~19 全部完成 ✅ | 后续增强 20 可靠性保障 ✅ / 21 Velero 备份容灾 ✅ / 22 Falco 运行时安全 ✅ / 23 服务网格·Linkerd ✅ + Istio ✅(双网格对比演示完成) | 🔒 聚焦模式已激活（全家桶冻结，专攻 23~31）；集群已开机，Cilium/Hubble(eBPF) 栈健康，服务网格双控面运行于 worker
 
 ---
 
@@ -152,6 +152,7 @@
 ├── 可靠性保障/                          ← PDB/ResourceQuota/LimitRange/PriorityClass 防御性配置（详见 `可靠性保障/`）✅
 ├── 备份容灾/                            ← Velero + MinIO(S3) 备份/恢复容灾，闭环已验证（详见 `备份容灾/`）✅
 ├── 运行时安全/                          ← Falco 运行时安全（DaemonSet + modern_ebpf，离线容器级富化，详见 `运行时安全/Falco/`）✅
+├── 服务网格/                            ← 第23项 服务网格（双网格对比演示）：`Linkerd/` + `Istio/` 均已离线落地并验证（mTLS+黄金指标+流量治理/熔断）；控制面限定 worker，详见 deploy-linkerd.md / deploy-istio.md / 服务网格对比-Linkerd-vs-Istio.md
 ├── CNI总览/                            ← Calico vs Cilium 生产配置对比（选型决策参考）
 ├── Calico-配置指南/                    ← Calico 生产配置详解 + 故障排查（作 Cilium 回退备援资料）
 ├── 流量入口/                            ← Ingress 暴露 + cert-manager TLS + Gateway API 金丝雀
@@ -277,4 +278,4 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 - ✅ **可靠性保障套件** — 2 个 PriorityClass + LimitRange + ResourceQuota + PDB(minAvailable=2) 已落地并验证；demo 3 副本 Running 于 worker（详见 `可靠性保障/`）✅
 - ✅ **Velero 备份容灾** — velero 命名空间已部署（复用 monitoring 的 MinIO S3 后端）；备份+恢复闭环实测 Completed(0 error)（详见 `备份容灾/`）✅
 - ✅ **Falco 运行时安全** — falco DaemonSet 仅落 worker（master NoSchedule 挡住）；modern_ebpf + 镜像内置容器插件离线富化；`cat /etc/shadow` 触发 Warning 告警含 container/pod/ns 元信息（详见 `运行时安全/Falco/`）✅
-📋 **后续增强路线（云原生能力补全 20~31）** — ✅ 20 可靠性保障已完成 / ✅ 21 Velero 备份容灾已完成 / ✅ 22 Falco 运行时安全已完成 / 23~31 推进中（🔒 聚焦模式已激活：全家桶已冻结，仅留控制面+Cilium+MinIO，专攻 23 服务网格（Istio/Linkerd）→ …）| 主线任务全部完成 ✅
+📋 **后续增强路线（云原生能力补全 20~31）** — ✅ 20 可靠性保障已完成 / ✅ 21 Velero 备份容灾已完成 / ✅ 22 Falco 运行时安全已完成 / 🟢 23 服务网格已完成（**Linkerd ✅ + Istio ✅** 双网格对比演示：mTLS(STRICT)+黄金指标+流量治理/熔断全部验证，文档见 服务网格/）/ 24~31 待规划（🔒 聚焦模式已激活：全家桶已冻结，仅留控制面+Cilium+MinIO+Falco+双网格，专攻 23~31）→ …）| 主线任务全部完成 ✅
