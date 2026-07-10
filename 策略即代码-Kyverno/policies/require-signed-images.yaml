@@ -1,0 +1,37 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-signed-images
+spec:
+  # Enforce：未通过验签直接拒绝准入
+  validationFailureAction: Enforce
+  webhookTimeoutSeconds: 30
+  background: false
+  rules:
+  - name: require-localreg-signed
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    verifyImages:
+    - # 本仓库（192.168.1.61:5000）下所有镜像都必须带 cosign 签名
+      imageReferences:
+      - "192.168.1.61:5000/*"
+      attestors:
+      - entries:
+        - keys:
+            publicKeys: |
+              -----BEGIN PUBLIC KEY-----
+              MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEzKfFYz8ddX7fbGYV2ZiFMYPMiBZy
+              2yvvqTbqysS7uOJS2AYnKRnuUHuJF2uwuCZ0+RxrpmTI+ymSFjaPm5QU5w==
+              -----END PUBLIC KEY-----
+            # 离线环境：跳过 Sigstore 透明日志（Rekor）与 SCT 校验，
+            # 否则 cosign 会去 tuf-repo-cdn.sigstore.dev 拉取 TUF root 而失败。
+            rekor:
+              ignoreTlog: true
+            ctlog:
+              ignoreSCT: true
+      required: true
+      mutateDigest: true
+      verifyDigest: true
