@@ -1,0 +1,91 @@
+# Falco 部署覆盖值（离线集群适配 + 容器插件冲突规避）
+# 集群内网无外网，节点从 Harbor 拉镜像；Falco 仅 worker 运行（master 用 NoSchedule 污点挡住）
+# 部署命令见同目录 deploy-falco.sh
+#
+# 关键坑（已解决）：falco 镜像内置 /etc/falco/config.d/falco.container_plugin.yaml，
+#   其中已写 load_plugins: [container]。因此：
+#   - 不能再用 chart 的 collectors.containerEngine（它会往 falco.yaml 再塞一份 load_plugins+plugins，
+#     与 config.d 重复注册导致 "found another plugin with name container" 崩溃）；
+#   - 改为关闭 collectors，手动在 falco.plugins 里仅提供 container 插件的 library_path 配置，
+#     load_plugins 由镜像内置 config.d 负责（单份注册）。
+#   - containerd socket 也手动挂载（HOST_ROOT=/host，故容器内路径为 /host/run/containerd/containerd.sock）。
+#
+# driver.kind=modern_ebpf：内核 5.15 支持 CO-RE，免内核模块构建；且不渲染 driver-loader init 容器（无需额外镜像）。
+# tolerations=[]：去掉官方默认的 master/control-plane 容忍，DaemonSet 只落到 worker（master 内存红线）。
+
+driver:
+  kind: modern_ebpf
+  loader:
+    enabled: false
+
+image:
+  registry: 192.168.1.61
+  repository: falcosecurity/falco
+  tag: "0.44.1"
+  pullPolicy: IfNotPresent
+
+# 不让 Falco 跑在 master（内存红线）
+tolerations: []
+
+# 关闭 chart 自带的 collectors 注入，避免与镜像内置 config.d 的 load_plugins 重复
+collectors:
+  enabled: false
+
+# 关闭 falcoctl（init/sidecar 会联网 docker.io 拉规则，离线必关；改用镜像内置规则）
+falcoctl:
+  artifact:
+    install:
+      enabled: false
+    follow:
+      enabled: false
+
+# 仅提供 container 插件的 library_path 配置（load_plugins 已由镜像内置 config.d 提供，单份注册）
+falco:
+  load_plugins: []
+  plugins:
+    - name: container
+      library_path: libcontainer.so
+      init_config:
+        label_max_len: 100
+        with_size: false
+        hooks: ["create"]
+        engines:
+          docker:
+            enabled: true
+            sockets: ["/var/run/docker.sock"]
+          podman:
+            enabled: true
+            sockets: ["/run/podman/podman.sock"]
+          containerd:
+            enabled: true
+            sockets: ["/run/containerd/containerd.sock"]
+          cri:
+            enabled: true
+            sockets:
+              - /run/containerd/containerd.sock
+              - /run/crio/crio.sock
+              - /run/k3s/containerd/containerd.sock
+          lxc:
+            enabled: true
+          libvirt_lxc:
+            enabled: true
+          bpm:
+            enabled: true
+
+# 手动挂载 containerd socket（plugin 经 HOST_ROOT=/host 解析）
+mounts:
+  volumes:
+    - name: containerd-sock
+      hostPath:
+        path: /run/containerd/containerd.sock
+  volumeMounts:
+    - name: containerd-sock
+      mountPath: /host/run/containerd/containerd.sock
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

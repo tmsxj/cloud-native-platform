@@ -2,7 +2,7 @@
 
 > 基于自建 5 节点 K8s 集群的 DevOps 实战项目，覆盖 **CI/CD 三方案 → 可观测性三大支柱 → 灰度发布 → K8s 三基石** 全链路。
 >
-> 📅 最近更新: 2026-07-09 | 状态: P0~P2b + 长期16 eBPF 全部完成 ✅ | 集群已开机，Cilium/Hubble(eBPF) 栈健康
+> 📅 最近更新: 2026-07-10 10:20 | 状态: P0~P2b + 长期16~19 全部完成 ✅ | 后续增强 20 可靠性保障 ✅ / 21 Velero 备份容灾 ✅ / 22 Falco 运行时安全 ✅ | 🔒 聚焦模式已激活（全家桶冻结，专攻 23~31）；集群已开机，Cilium/Hubble(eBPF) 栈健康
 
 ---
 
@@ -149,6 +149,9 @@
 ├── eBPF-可观测性/                      ← eBPF 可观测性 (Cilium 接管 CNI + Hubble 流量观测)
 ├── 混沌工程-ChaosMesh/                   ← Chaos Mesh 混沌工程（worker 限定，注入故障验证韧性）
 ├── 策略即代码-Kyverno/                   ← Kyverno 策略即代码（准入控制，替代人工镜像检查）
+├── 可靠性保障/                          ← PDB/ResourceQuota/LimitRange/PriorityClass 防御性配置（详见 `可靠性保障/`）✅
+├── 备份容灾/                            ← Velero + MinIO(S3) 备份/恢复容灾，闭环已验证（详见 `备份容灾/`）✅
+├── 运行时安全/                          ← Falco 运行时安全（DaemonSet + modern_ebpf，离线容器级富化，详见 `运行时安全/Falco/`）✅
 ├── CNI总览/                            ← Calico vs Cilium 生产配置对比（选型决策参考）
 ├── Calico-配置指南/                    ← Calico 生产配置详解 + 故障排查（作 Cilium 回退备援资料）
 ├── 流量入口/                            ← Ingress 暴露 + cert-manager TLS + Gateway API 金丝雀
@@ -229,6 +232,9 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 | **eBPF 可观测性** | Cilium + Hubble | eBPF 接管 CNI(VXLAN) + Hubble 流量/DNS 可观测 + Grafana eBPF Dashboard ✅ |
 | **混沌工程** | Chaos Mesh | PodChaos/NetworkChaos/StressChaos 注入故障验证系统韧性（详见 `混沌工程-ChaosMesh/`）✅ |
 | **策略即代码** | Kyverno | 准入控制：禁 latest 标签 / 限可信仓库 / 要求探针 / 禁特权，替代人工镜像检查（详见 `策略即代码-Kyverno/`）✅ |
+| **可靠性保障** | PDB / ResourceQuota / LimitRange / PriorityClass | 防御性配置：可用性/驱逐安全(PDB) + 资源治理(Quota/LimitRange) + 优雅优先级(PriorityClass)（详见 `可靠性保障/`）✅ |
+| **备份容灾** | Velero + MinIO(S3) | 集群级备份/恢复，复用现有 MinIO 对象存储作 S3 后端；备份+恢复闭环已验证（详见 `备份容灾/`）✅ |
+| **运行时安全** | Falco (modern_ebpf) | 运行时威胁检测：异常进程/提权/敏感文件读取，镜像内置容器插件离线做容器级富化（DevSecOps 三层收尾，详见 `运行时安全/Falco/`）✅ |
 | **证书安全** | cert-manager | 自签 CA → ClusterIssuer → 4 SAN 域名 TLS ✅ |
 
 ---
@@ -268,4 +274,7 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 - ✅ **CNI 双资料** — Cilium 生产配置指南(含跨节点实测) + Calico 生产配置指南 + CNI 总览对比（详见 `eBPF-可观测性/Cilium-生产配置指南.md`、`Calico-配置指南/`、`CNI总览/`）
 - ✅ **Chaos Mesh 混沌工程** — chaos-testing 命名空间已部署（worker 限定，master 不跑 daemon）；PodChaos 实测注入并重建目标 Pod（详见 `混沌工程-ChaosMesh/`）
 - ✅ **Kyverno 策略即代码** — kyverno 命名空间已部署（worker 限定）；4 条策略（禁 latest 标签 / 限可信仓库 / 要求探针 / 禁特权）实测拦截违规 Pod、放行合规 Pod（详见 `策略即代码-Kyverno/`）
-📋 **长期任务** — ✅ OpenTelemetry+LGTM 已完成（LGTM 全栈 S3 化，方案 B 当前运行；方案 A=SkyWalking+ES manifest 保留）/ eBPF 已完成 / ✅ Chaos Mesh 已完成（worker 限定）/ ✅ Kyverno 已完成（worker 限定）| 全部主线任务完成 ✅
+- ✅ **可靠性保障套件** — 2 个 PriorityClass + LimitRange + ResourceQuota + PDB(minAvailable=2) 已落地并验证；demo 3 副本 Running 于 worker（详见 `可靠性保障/`）✅
+- ✅ **Velero 备份容灾** — velero 命名空间已部署（复用 monitoring 的 MinIO S3 后端）；备份+恢复闭环实测 Completed(0 error)（详见 `备份容灾/`）✅
+- ✅ **Falco 运行时安全** — falco DaemonSet 仅落 worker（master NoSchedule 挡住）；modern_ebpf + 镜像内置容器插件离线富化；`cat /etc/shadow` 触发 Warning 告警含 container/pod/ns 元信息（详见 `运行时安全/Falco/`）✅
+📋 **后续增强路线（云原生能力补全 20~31）** — ✅ 20 可靠性保障已完成 / ✅ 21 Velero 备份容灾已完成 / ✅ 22 Falco 运行时安全已完成 / 23~31 推进中（🔒 聚焦模式已激活：全家桶已冻结，仅留控制面+Cilium+MinIO，专攻 23 服务网格（Istio/Linkerd）→ …）| 主线任务全部完成 ✅
