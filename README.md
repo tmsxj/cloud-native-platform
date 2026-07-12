@@ -5,6 +5,8 @@
 > 📅 最近更新: 2026-07-12 | 状态: P0~P2b + 长期16~19 全部完成 ✅ | 后续增强 20 可靠性保障 ✅ / 21 Velero 备份容灾 ✅ / 22 Falco 运行时安全 ✅ / 23 服务网格·Linkerd ✅ + Istio ✅(双网格对比演示完成) / 24 供应链安全 ✅(cosign 签名 + Kyverno verifyImages 验签 + SBOM) / 25 密钥进阶 ✅(Vault + External Secrets Operator 自动同步 K8s Secret) | 🔒 聚焦模式已激活（全家桶冻结，专攻 23~31）
 >
 > 📡 同步镜像: 本仓库同时托管于 GitHub 与 Gitee（[hlxb/cloud-native-platform](https://gitee.com/hlxb/cloud-native-platform)），`git push` 自动双推，两端内容一致。目标实操环境：自建 kubeadm 5 节点离线集群（Cilium/Hubble eBPF 数据面 + Linkerd/Istio 双服务网格）。
+>
+> 🗺️ **想按体系化顺序系统学习？看 [学习路线.md](./学习路线.md)（按能力递进的观看顺序，目录结构不变）。**
 
 ---
 
