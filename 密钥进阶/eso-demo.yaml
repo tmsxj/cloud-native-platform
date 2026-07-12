@@ -1,0 +1,46 @@
+# 第25项 密钥进阶 — ESO 演示：Vault → K8s Secret 自动同步
+# 前提：Vault(dev) 已启用 kv-v2 于 path=kv，并写入 kv/db (password)
+# ESO 通过 SecretStore 连接 Vault，ExternalSecret 把 kv/db.password 同步为 K8s Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vault-token
+  namespace: vault
+type: Opaque
+stringData:
+  token: "root"
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: vault-backend
+  namespace: vault
+spec:
+  provider:
+    vault:
+      server: "http://vault.vault.svc:8200"
+      path: "kv"
+      version: "v2"
+      auth:
+        tokenSecretRef:
+          name: vault-token
+          key: token
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: db-secret
+  namespace: vault
+spec:
+  refreshInterval: 1m
+  secretStoreRef:
+    name: vault-backend
+    kind: SecretStore
+  target:
+    name: db-secret
+    creationPolicy: Owner
+  data:
+  - secretKey: password
+    remoteRef:
+      key: db
+      property: password

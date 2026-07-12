@@ -1,0 +1,70 @@
+# 第25项 密钥进阶 — Vault 部署清单（dev 模式，离线镜像）
+# 说明：dev 模式自动 unseal、根 token 固定为 root、无持久化（内存存储）。
+#       适合演示 ESO 集成闭环；生产请用 Raft/Integrated Storage + auto-unseal。
+# 镜像：192.168.1.61/hashicorp/vault:1.19.4（已同步至 Harbor）
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vault
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vault
+  namespace: vault
+  labels:
+    app: vault
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vault
+  template:
+    metadata:
+      labels:
+        app: vault
+    spec:
+      containers:
+      - name: vault
+        image: 192.168.1.61/hashicorp/vault:1.19.4
+        args:
+        - "server"
+        - "-dev"
+        - "-dev-root-token-id=root"
+        - "-dev-listen-address=0.0.0.0:8200"
+        env:
+        - name: VAULT_ADDR
+          value: "http://127.0.0.1:8200"
+        - name: VAULT_DEV_LISTEN_ADDRESS
+          value: "0.0.0.0:8200"
+        ports:
+        - containerPort: 8200
+          name: vault
+        securityContext:
+          capabilities:
+            add: ["IPC_LOCK"]
+        readinessProbe:
+          httpGet:
+            path: /v1/sys/health
+            port: 8200
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /v1/sys/health
+            port: 8200
+          initialDelaySeconds: 10
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault
+  namespace: vault
+spec:
+  selector:
+    app: vault
+  ports:
+  - name: vault
+    port: 8200
+    targetPort: 8200

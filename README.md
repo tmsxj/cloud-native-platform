@@ -2,7 +2,7 @@
 
 > 基于自建 5 节点 kubeadm 集群的 DevOps 实战项目，覆盖 **CI/CD 三方案 → 可观测性三大支柱 → 灰度发布 → K8s 三基石 → 服务网格双栈 → 供应链安全** 全链路，并收敛为完整 **DevSecOps 四层闭环**（扫描 Trivy + 准入 Kyverno + 运行时 Falco + 供应链验签）。
 >
-> 📅 最近更新: 2026-07-11 | 状态: P0~P2b + 长期16~19 全部完成 ✅ | 后续增强 20 可靠性保障 ✅ / 21 Velero 备份容灾 ✅ / 22 Falco 运行时安全 ✅ / 23 服务网格·Linkerd ✅ + Istio ✅(双网格对比演示完成) / 24 供应链安全 ✅(cosign 签名 + Kyverno verifyImages 验签 + SBOM) | 🔒 聚焦模式已激活（全家桶冻结，专攻 23~31）
+> 📅 最近更新: 2026-07-12 | 状态: P0~P2b + 长期16~19 全部完成 ✅ | 后续增强 20 可靠性保障 ✅ / 21 Velero 备份容灾 ✅ / 22 Falco 运行时安全 ✅ / 23 服务网格·Linkerd ✅ + Istio ✅(双网格对比演示完成) / 24 供应链安全 ✅(cosign 签名 + Kyverno verifyImages 验签 + SBOM) / 25 密钥进阶 ✅(Vault + External Secrets Operator 自动同步 K8s Secret) | 🔒 聚焦模式已激活（全家桶冻结，专攻 23~31）
 >
 > 📡 同步镜像: 本仓库同时托管于 GitHub 与 Gitee（[hlxb/cloud-native-platform](https://gitee.com/hlxb/cloud-native-platform)），`git push` 自动双推，两端内容一致。目标实操环境：自建 kubeadm 5 节点离线集群（Cilium/Hubble eBPF 数据面 + Linkerd/Istio 双服务网格）。
 
@@ -156,6 +156,7 @@
 ├── 运行时安全/                          ← Falco 运行时安全（DaemonSet + modern_ebpf，离线容器级富化，详见 `运行时安全/Falco/`）✅
 ├── 服务网格/                            ← 第23项 服务网格（双网格对比演示）：`Linkerd/` + `Istio/` 均已离线落地并验证（mTLS+黄金指标+流量治理/熔断）；控制面限定 worker，详见 deploy-linkerd.md / deploy-istio.md / 服务网格对比-Linkerd-vs-Istio.md
 ├── 供应链安全/                          ← 第24项 供应链安全：cosign 镜像签名 + syft 生成 SBOM + Kyverno verifyImages 验签闭环（签名放行/未签名拒绝已验证，详见 `供应链安全/`）✅
+├── 密钥进阶/                            ← 第25项 密钥进阶：Vault 集中密钥库 + External Secrets Operator 自动同步 K8s Secret（SecretStore/ExternalSecret 闭环已验证，详见 `密钥进阶/`）✅
 ├── CNI总览/                            ← Calico vs Cilium 生产配置对比（选型决策参考）
 ├── Calico-配置指南/                    ← Calico 生产配置详解 + 故障排查（作 Cilium 回退备援资料）
 ├── 流量入口/                            ← Ingress 暴露 + cert-manager TLS + Gateway API 金丝雀
@@ -240,6 +241,7 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 | **备份容灾** | Velero + MinIO(S3) | 集群级备份/恢复，复用现有 MinIO 对象存储作 S3 后端；备份+恢复闭环已验证（详见 `备份容灾/`）✅ |
 | **运行时安全** | Falco (modern_ebpf) | 运行时威胁检测：异常进程/提权/敏感文件读取，镜像内置容器插件离线做容器级富化（DevSecOps 三层收尾，详见 `运行时安全/Falco/`）✅ |
 | **供应链安全** | cosign + syft + Kyverno verifyImages | 镜像签名（本地私钥）+ SBOM 生成 + 准入验签（未签名一律拒绝），DevSecOps 第四层闭环（详见 `供应链安全/`）✅ |
+| **密钥进阶** | Vault + External Secrets Operator | 集中密钥管理（Vault KV v2）+ 自动同步为 K8s Secret（SecretStore/ExternalSecret），应用无感知使用动态密钥，DevSecOps 密钥管理层（详见 `密钥进阶/`）✅ |
 | **证书安全** | cert-manager | 自签 CA → ClusterIssuer → 4 SAN 域名 TLS ✅ |
 
 ---
@@ -283,4 +285,4 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 - ✅ **Velero 备份容灾** — velero 命名空间已部署（复用 monitoring 的 MinIO S3 后端）；备份+恢复闭环实测 Completed(0 error)（详见 `备份容灾/`）✅
 - ✅ **Falco 运行时安全** — falco DaemonSet 仅落 worker（master NoSchedule 挡住）；modern_ebpf + 镜像内置容器插件离线富化；`cat /etc/shadow` 触发 Warning 告警含 container/pod/ns 元信息（详见 `运行时安全/Falco/`）✅
 - ✅ **供应链安全（第24项）** — cosign 本地私钥签名镜像 + syft 生成 SBOM；Kyverno verifyImages 策略（`imageReferences=192.168.1.61:5000/*`，keys 公钥验签 + `rekor.ignoreTlog`/`ctlog.ignoreSCT` 跳过透明日志适配离线）实测：签名镜像放行、未签名镜像被拒（`no signatures found`），DevSecOps 第四层（扫描 Trivy + 准入 Kyverno + 运行时 Falco + 供应链验签）闭环成立（详见 `供应链安全/`）✅
-📋 **后续增强路线（云原生能力补全 20~31）** — ✅ 20 可靠性保障已完成 / ✅ 21 Velero 备份容灾已完成 / ✅ 22 Falco 运行时安全已完成 / 🟢 23 服务网格已完成（**Linkerd ✅ + Istio ✅** 双网格对比演示：mTLS(STRICT)+黄金指标+流量治理/熔断全部验证，文档见 服务网格/）/ ✅ 24 供应链安全已完成 / 25~31 待规划（🔒 聚焦模式已激活：全家桶已冻结，仅留控制面+Cilium+MinIO+Falco+双网格+Kyverno/准入，专攻 23~31）→ …）| 主线任务全部完成 ✅
+📋 **后续增强路线（云原生能力补全 20~31）** — ✅ 20 可靠性保障已完成 / ✅ 21 Velero 备份容灾已完成 / ✅ 22 Falco 运行时安全已完成 / 🟢 23 服务网格已完成（**Linkerd ✅ + Istio ✅** 双网格对比演示：mTLS(STRICT)+黄金指标+流量治理/熔断全部验证，文档见 服务网格/）/ ✅ 24 供应链安全已完成 / ✅ 25 密钥进阶已完成（Vault+ESO 闭环）/ 26~31 待规划（🔒 聚焦模式已激活：全家桶已冻结，仅留控制面+Cilium+MinIO+Falco+双网格+Kyverno/准入，专攻 23~31）→ …）| 主线任务全部完成 ✅
