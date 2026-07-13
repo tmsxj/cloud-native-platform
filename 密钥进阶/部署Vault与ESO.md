@@ -11,6 +11,16 @@
 - External Secrets Operator（ESO）连接 Vault，把指定密钥自动同步为 K8s（Kubernetes，容器编排引擎） 原生 Secret
 - 形成闭环：**Vault 改密 → ESO 定时刷新 → K8s Secret 更新 → 应用热加载**
 
+## 与原生 Secret / Sealed Secrets 的差异
+
+| 维度 | K8s 原生 Secret | Sealed Secrets | Vault + ESO（本方案） |
+|------|----------------|----------------|----------------------|
+| 密钥是否明文入 Git | 是（base64 可还原） | 否（加密后入 Git） | 否（仅 Vault 持有明文，K8s 侧始终是解密后的 Secret） |
+| 集中管理 | 否（各 ns 各自维护） | 否 | 是（Vault 统一存管） |
+| 动态轮转 | 需手动改 | 需重新加密 | 自动：`refreshInterval` 拉取新值，应用热加载 |
+| 审计 | 无 | 无 | Vault Audit Device 可追溯每次访问 |
+| 适用 | 演示 | 私有化起步 | 企业级密钥治理 |
+
 ## 二、组件与镜像（离线 Harbor（私有镜像仓库））
 
 | 组件 | 版本 | Harbor 镜像 |

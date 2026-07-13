@@ -95,3 +95,16 @@ kubectl delete namespace kyverno
 - **准入控制（Admission Control）** 是 K8s（Kubernetes，容器编排引擎） 安全最后一道闸：Kyverno 作为 Validating/Mutating Webhook 在资源落库前拦截
 - 与 OPA（Open Policy Agent，策略引擎）/Gatekeeper 的区别：Kyverno **纯 YAML、无需学新语言（Rego）**，K8s 原生体验更好，适合团队快速落地
 - 本项目四条策略覆盖了"镜像标签 / 镜像来源 / 健康检查 / 安全上下文"四个最常被人工 review 的合规点
+
+## 8. Kyverno vs OPA Gatekeeper 对比
+
+| 维度 | Kyverno（本项目采用） | OPA Gatekeeper |
+|------|----------------------|----------------|
+| 策略语言 | 纯 YAML（K8s 原生体验） | Rego（需另学） |
+| 策略来源 | ClusterPolicy CRD（声明式） | ConstraintTemplate + Constraint |
+| 变更（Mutating） | 原生支持 `mutate` | 需配合 OPA 外部，较复杂 |
+| 生成资源 | 支持 `generate`（如自动建 Secret/ConfigMap） | 不直接支持 |
+| 学习曲线 | 低，团队易落地 | 高（Rego + OPA 体系） |
+| 适用 | 快速落地策略即代码、K8s 团队 | 已有 OPA 投资、需复杂逻辑 |
+
+> 本项目选 Kyverno：纯 YAML 零新语言，四条策略半天落地，且 `generate`/`mutate` 开箱即用。

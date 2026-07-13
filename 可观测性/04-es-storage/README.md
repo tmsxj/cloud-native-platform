@@ -72,3 +72,15 @@ kubectl exec -n monitoring elasticsearch-0 -- curl -s 'http://localhost:9200/_ca
 3. **分片副本**: 集群模式下自动创建 replica，Green = primary + replica 全部分配
 4. **为什么不用 ECK Operator（操作符，自动化运维控制器）**: 演示环境，理解底层手工配置比用 Operator 更能体现深度
 5. **JVM 堆建议**: 不超过 50% 物理内存，不超过 32GB（压缩指针上限）
+
+## ES vs Tempo 作为 trace 存储后端（方案 A vs 方案 B）
+
+| 维度 | 方案 A：Elasticsearch（本文件） | 方案 B：Tempo + MinIO S3（当前运行） |
+|------|-------------------------------|--------------------------------------|
+| trace 存储 | ES 索引（local-path PVC） | Tempo 后端 MinIO S3（bucket=`tempo`） |
+| 资源占用 | 3 节点 StatefulSet，~2.6GB（已卸载省资源） | otel-collector + Tempo，较轻 |
+| 查询入口 | SkyWalking UI + Grafana derivedFields | Grafana Tempo 数据源 |
+| 关联日志 | derivedFields 跳 ES | `trace_id` 关联 Loki（日志系统） |
+| 适用 | 纯 SkyWalking APM 栈 | 云原生标准、S3 化降本、与 Loki 同源 |
+
+> 本项目从方案 A 演进到方案 B：释放约 6Gi+ worker 内存，trace/日志统一落 MinIO，见 [`../README.md`](../README.md) 演进记录。

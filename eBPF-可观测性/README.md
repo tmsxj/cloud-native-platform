@@ -43,6 +43,16 @@ Pod ──> Cilium CNI (05-cilium.conflist) ──> eBPF 数据面 (VXLAN 隧道
 
 - 同集群同刻只能有一个 CNI 真正接管 Pod（容器组） 网络（kubelet 按 CNI 配置文件名字典序加载）。
 - 本项目现状：**Cilium 已实际接管**，Calico 仅作回退备份；上层全家桶不依赖特定 CNI。
+## eBPF/Hubble 观测 vs 传统方案
+
+| 维度 | Cilium + Hubble（eBPF 内核观测，本项目） | 传统 sidecar/iptables 观测 |
+|------|----------------------------------------|---------------------------|
+| 数据来源 | 内核 eBPF 直接捕流（零侵入业务 Pod） | 需 sidecar 代理或埋点 |
+| 可见性 | L3-L7 服务依赖、HTTP/DNS/Kafka 流 | 受 sidecar 能力限制 |
+| 性能 | 内核层，无 per-Pod 代理开销 | sidecar 每 Pod 增资源 |
+| 策略 | 基于身份（Endpoint Identity）的 NetworkPolicy | 多基于 IP/标签 |
+| 可观测接入 | Hubble 指标 → Prometheus → Grafana（35 面板） | 依赖各自 exporter |
+
 - 选型对比见 `../CNI总览/CNI-生产配置对比.md`；Calico 资料见 `../Calico-配置指南/`。
 
 ---

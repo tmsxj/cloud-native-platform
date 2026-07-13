@@ -96,3 +96,15 @@ velero restore create <名> --from-backup <备份名> [--namespace-mappings a:b]
 velero restore get
 velero backup delete <名>        # 同时删 MinIO 中对象
 ```
+
+## 备份方案对比
+
+| 维度 | Velero（本项目采用） | etcd 快照（snapshot） | 存储卷快照（CSI） |
+|------|---------------------|----------------------|------------------|
+| 粒度 | 命名空间/资源级，可筛选 | 全集群 etcd | 单 PV（持久卷） |
+| 跨集群恢复 | ✅（`--namespace-mappings` 改名恢复） | 仅同构集群恢复 | 需同 CSI 驱动 |
+| 后端 | 对象存储（S3/MinIO） | 本地文件 | 块存储快照 |
+| 应用感知 | ✅ 可 hook 停写/静默 | ❌ 崩溃一致性 | 依赖 CSI 快照一致性 |
+| 适用 | K8s 资源 + 数据整体备份 | 紧急全量回滚 | 有状态单卷快速回滚 |
+
+> 本项目用 Velero + 现有 MinIO（`bucket=velero`）：不另起存储，资源级备份可跨命名空间恢复，补齐 DR 必答题。

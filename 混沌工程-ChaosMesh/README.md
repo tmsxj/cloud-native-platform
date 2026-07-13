@@ -92,3 +92,15 @@ kubectl delete namespace chaos-testing
 - Chaos Mesh 用 **CRD + controller + 节点 daemon** 实现，故障注入对应用**无侵入**（对比传统需改代码）
 - 与可观测性结合才是完整闭环；单独跑混沌没意义
 - 生产用法：接 ArgoWCD 定时、配合 SLO 燃烧率告警、在**非高峰 + 有撤销手段**时做
+
+## 8. 混沌工程工具对比
+
+| 维度 | Chaos Mesh（本项目采用） | LitmusChaos | kube-monkey |
+|------|-------------------------|-------------|-------------|
+| 故障类型 | Pod/Network/CPU/IO/Time/内核等全覆盖 | Pod/Network/Stress 等（ChaosHub 生态） | 仅 Pod kill（随机） |
+| 注入方式 | CRD + 节点 daemon（无侵入） | CRD + operator | Deployment（随机杀 Pod） |
+| 场景编排 | 多步实验、定时、依赖编排 | 实验工作流（Argo 风格） | 仅随机故障 |
+| 可观测联动 | 原生对接 Prometheus/Grafana（本项目已闭环） | 支持 | 弱 |
+| 适用 | 完整韧性验证、需丰富故障库 | CNCF 生态、实验市场 | 轻量随机杀 Pod 验证 |
+
+> 本项目选 Chaos Mesh：故障类型最全、节点 daemon 无侵入注入，且天然对接可观测性三支柱形成「注入→异常→验证」闭环。

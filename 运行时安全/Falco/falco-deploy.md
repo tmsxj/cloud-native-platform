@@ -69,6 +69,16 @@ Warning Sensitive file opened for reading by non-trusted program
 ```
 → 容器级富化（container_name / 镜像 / pod / ns）离线正常，DevSecOps 三层闭环打通。
 
+## 运行时检测方案对比
+
+| 维度 | Falco（本项目采用） | Tracee |
+|------|---------------------|--------|
+| 实现 | 内核 eBPF 捕获 syscall，规则引擎匹配告警 | eBPF + 内置规则/签名，偏取证与威胁情报 |
+| 规则生态 | 成熟规则库（`falco_rules`），社区活跃 | 基于 OCI 签名与 eBPF 事件，取证能力强 |
+| 输出 | stdout / 可接 falcosidekick 转发多后端 | 多输出（OTel/Webhook/文件） |
+| 离线适配 | 单镜像 + 内置 libcontainer 富化，改 `library_path` 即可 | 需额外镜像与签名库，离线较重 |
+| 本项目选型 | 已落地，告警闭环验证（读 `/etc/shadow` 触发） | 作为备选未部署 |
+
 ## 资源
 
 - 每节点 1 个 Pod（容器组），request 256Mi / limit 512Mi，cpu 100m/500m。

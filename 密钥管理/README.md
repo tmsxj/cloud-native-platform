@@ -47,6 +47,16 @@ kubectl get secret harbor-creds -n tomcat-prod
 #     - name: harbor-creds
 ```
 
+## 密钥管理方案对比（本项目两条路线）
+
+| 维度 | Sealed Secrets（本文件） | External Secrets Operator + Vault（见 `../密钥进阶/部署Vault与ESO.md`） |
+|------|--------------------------|----------------------------------------|
+| 核心理念 | 加密后 Secret 入 Git，集群内自动解密 | 集中密钥库（Vault）定时同步成 K8s Secret |
+| 外部依赖 | 无（纯 K8s native） | 需部署 Vault + ESO 控制面 |
+| 密钥来源 | 静态凭据（如 Harbor 拉取口令） | 动态密钥（KV v2，支持轮转/自动刷新） |
+| 适用场景 | 私有化最简、凭据不常变 | 企业级、密钥需集中管理与轮转 |
+| 本项目角色 | 快速落地、零依赖起步 | 进阶路线，密钥不在 Git 明文出现 |
+
 ## 面试要点
 
 1. **为什么不用 SOPs/External Secrets?** Sealed Secrets 零外部依赖，纯 K8s（Kubernetes，容器编排引擎） native，私有化部署最简方案

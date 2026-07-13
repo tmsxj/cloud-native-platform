@@ -64,6 +64,18 @@ kubectl exec -n monitoring skywalking-oap-0 -- \
 # kubectl argo rollouts promote tomcat-app-agent -n tomcat-prod
 ```
 
+## SkyWalking Agent 注入 vs OTel 埋点（方案 A vs 方案 B）
+
+| 维度 | 方案 A：SkyWalking Java Agent（本文件） | 方案 B：OpenTelemetry（OTel，可观测性数据采集标准） 埋点 |
+|------|----------------------------------------|--------------------------------------------------------|
+| 埋点方式 | `-javaagent` 字节码增强，仅 Java | 多语言 SDK / 自动埋点，语言无关 |
+| 数据协议 | SkyWalking 私有协议 | OTLP（gRPC 4317 / HTTP 4318，标准） |
+| 存储后端 | Elasticsearch（ES） | Tempo + MinIO S3 |
+| 关联日志 | Agent 注入 trace_id → Loki 正则提取 | OTel Collector 统一处理，Grafana `trace_id` 关联 |
+| 适用 | 纯 Java 微服务、要 APM 拓扑 | 多语言、对齐 LGTM 标准栈 |
+
+> 见 [`../../README.md`](../../README.md) 两套方案完整对照；本项目当前运行方案 B。
+
 ## 面试要点
 
 1. **Java Agent 原理**: `-javaagent` JVM 参数 → premain → 字节码增强 → 无侵入埋点

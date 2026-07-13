@@ -45,6 +45,18 @@ curl -X PUT "http://harbor.lab.local/api/v2.0/system/gc/schedule" \
   -d '{"schedule":{"cron":"0 3 * * *","type":"Custom"}}'
 ```
 
+## 镜像仓库选型对比
+
+| 维度 | Harbor（本项目采用） | Docker Registry（原生） | Nexus | Zot |
+|------|---------------------|------------------------|-------|-----|
+| 图形界面 | ✅ 完整 UI | ❌ 无 | ✅ | ❌ |
+| 权限/项目 | 项目级 RBAC（基于角色的访问控制） | 弱 | ✅ | 基础 |
+| 镜像签名/扫描 | 可接 Trivy/Notary | ❌ | 部分 | ✅ 内建签名 |
+| 垃圾回收 | Retention + GC Schedule | 手动 `registry gc` | 支持 | 支持 |
+| 适用 | 企业级、需治理 | 极简单节点 | 多格式仓库（maven/npm 等） | 云原生/供应链（OCI 签名） |
+
+> 本项目选 Harbor：图形化 + 项目权限 + 可接 Trivy 扫描与 cosign 签名，闭环 DevSecOps 镜像治理。
+
 ## 面试要点
 
 1. **Retention vs GC**: Retention 只标记/标记删除，GC 实际释放磁盘空间，两者需配合

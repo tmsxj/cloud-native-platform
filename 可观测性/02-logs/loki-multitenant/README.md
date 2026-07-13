@@ -57,6 +57,18 @@ kubectl exec -n monitoring loki-0 -- wget -qO- --timeout=3 \
 # 返回错误 (auth_enabled=true, 无租户头)
 ```
 
+## Loki vs ELK 日志方案对比
+
+| 维度 | Loki（本项目采用） | ELK（Elasticsearch + Logstash + Kibana） |
+|------|-------------------|-------------------------------------------|
+| 索引模型 | 仅索引 label（轻，像 Prometheus 的日志版） | 全文倒排索引（重，磁盘占用大） |
+| 存储成本 | 低（chunk 可直接落对象存储 MinIO S3） | 高（ES 索引膨胀） |
+| 查询语言 | LogQL（类 PromQL） | KQL / Lucene |
+| 多租户 | `X-Scope-OrgID` header 原生支持（见上） | 需额外鉴权/空间隔离 |
+| 适用 | K8s 日志、与 Prometheus/Grafana 同源 | 全文检索重、已有 ES 投资 |
+
+> 本项目选 Loki：与 Prometheus/Grafana 同源、label 索引省资源、chunk 落 MinIO 对齐 LGTM 标准栈。
+
 ## 内存开销
 
 多租户不新增 Pod（容器组），只在请求路径加租户识别。内存增量 ~50-100MB。
