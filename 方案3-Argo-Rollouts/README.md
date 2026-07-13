@@ -1,12 +1,12 @@
-# P2: Argo Rollouts 灰度发布
+# P2: Argo Rollouts（渐进式发布控制器） 灰度发布
 
-> **状态**: ✅ 完成 | **日期**: 2026-06-26 | **前置**: P0 Kustomize 重构
+> **状态**: ✅ 完成 | **日期**: 2026-06-26 | **前置**: P0 Kustomize（K8s 清单定制工具） 重构
 
 ---
 
 ## 目标
 
-将 tomcat 三个环境的 **Deployment** 迁移到 **Argo Rollouts**，实现：
+将 tomcat 三个环境的 **Deployment（部署，无状态工作负载）** 迁移到 **Argo Rollouts**，实现：
 
 | 环境 | 发布策略 | Promotion | 说明 |
 |------|----------|-----------|------|
@@ -20,7 +20,7 @@
 
 | 组件 | 内存 | 说明 |
 |------|------|------|
-| Argo Rollouts Controller | ~50Mi | 单个 Pod，无额外数据库 |
+| Argo Rollouts Controller | ~50Mi | 单个 Pod（容器组），无额外数据库 |
 | 各环境预览 Pod (staging/prod) | 各 1 副本 | 蓝绿发布时的 preview stack |
 
 ---
@@ -158,7 +158,7 @@ kubectl argo rollouts undo tomcat-app -n tomcat-prod
 |------|-------------|---------------------|------------------|
 | 副本数 | 1 | 2 (active) + 1 (preview) | 2 (active) + 1 (preview) |
 | 流量切换 | 逐步 (20/40/100) | 一次性切换 | 一次性切换 |
-| 实现方式 | 标签权重 | Service Selector 切换 | Service Selector 切换 |
+| 实现方式 | 标签权重 | Service（服务，集群内服务发现） Selector 切换 | Service Selector 切换 |
 | 验证窗口 | 每步 60s | 手动确认 | 手动确认 |
 | 旧版保留 | 否 | 120s 后下线 | 600s 后下线 |
 | 回滚 | `undo` 重建旧版 | `abort` 切回旧 Pod | `abort` 切回旧 Pod |
@@ -185,7 +185,7 @@ kubectl argo rollouts undo tomcat-app -n tomcat-prod
 
 ---
 
-## GitLab 恢复后操作
+## GitLab（代码托管 + CI 平台） 恢复后操作
 
 当前 GitLab 已关停，Rollout 通过 `kubectl apply` 直接部署。GitLab 恢复后：
 
@@ -196,7 +196,7 @@ kubectl argo rollouts undo tomcat-app -n tomcat-prod
    git push origin main
    ```
 
-2. **更新 ArgoCD Application 源路径**
+2. **更新 ArgoCD（GitOps 持续交付工具） Application 源路径**
    ```bash
    # 修改 Application 的 source.path 指向新 kustomize 路径
    kubectl patch app tomcat-app-dev -n argocd --type=merge \

@@ -1,14 +1,14 @@
-# Linkerd 服务网格部署（离线 / Harbor 镜像）
+# Linkerd（服务网格） 服务网格部署（离线 / Harbor 镜像）
 
 > 版本：linkerd2 **stable-2.14.10**（CLI 与数据面同版本）
 > 集群：kubeadm v1.28.15（5 节点，聚焦模式，master 内存红线 → 控制面只落 worker）
-> 镜像源：cr.l5d.io/linkerd/* → 经 `外网资源同步/sync_from_us.ps1` 入 Harbor `192.168.1.61/linkerd/*`
-> 验证结论：`linkerd check --proxy` 全绿；demo 注入 2/2；mTLS 生效；黄金指标可采。
+> 镜像源：cr.l5d.io/linkerd/* → 经 `外网资源同步/sync_from_us.ps1` 入 Harbor（私有镜像仓库） `192.168.1.61/linkerd/*`
+> 验证结论：`linkerd check --proxy` 全绿；demo 注入 2/2；mTLS（双向 TLS） 生效；黄金指标可采。
 
 ## 1. 为什么选 stable-2.14.10 而不是最新 edge
 
 - edge（如 edge-26.6.3）给 `linkerd-destination` / `linkerd-proxy-injector` 的 **proxy-init 初始化容器加了探针**，
-  但 **k8s 1.28 不允许 init 容器带探针**（1.29+ 才允许），导致这两个 Deployment 创建失败、控制面不可用。
+  但 **k8s 1.28 不允许 init 容器带探针**（1.29+ 才允许），导致这两个 Deployment（部署，无状态工作负载） 创建失败、控制面不可用。
 - stable-2.14.10 是兼容 k8s 1.28 的最后一个稳定版，无此问题。
 
 ## 2. 离线镜像清单（需同步进 Harbor）
@@ -94,14 +94,14 @@ kubectl apply -f linkerd-demo.yaml
 # linkerd stat deploy -n linkerd-demo  →  SUCCESS/RPS/LATENCY/TCP_CONN 黄金指标
 ```
 
-## 6. 能力小结（对比 Istio 用）
+## 6. 能力小结（对比 Istio（服务网格） 用）
 
 | 维度 | Linkerd 表现 |
 |------|------|
-| mTLS | 默认全量 Pod 间 mTLS，数据面证书由 linkerd-identity 签发，check 显示证书匹配 CA |
+| mTLS | 默认全量 Pod（容器组） 间 mTLS，数据面证书由 linkerd-identity 签发，check 显示证书匹配 CA |
 | 注入 | 命名空间注解 `linkerd.io/inject: enabled`，自动注入 Rust 写的 ultra-light proxy |
-| 黄金指标 | success / RPS / latency(p50,p95,p99) / TCP conn，Prometheus 已采集 |
+| 黄金指标 | success / RPS / latency(p50,p95,p99) / TCP conn，Prometheus（指标监控系统） 已采集 |
 | 观测 UI | linkerd-viz（web dashboard + tap 实时流量） |
 | 资源占用 | 极低（Rust proxy，~10-20MB/sidecar），适合聚焦模式 |
-| 流量治理 | 偏轻：retry / timeout / traffic-split（需 SMI CRD），无原生熔断/限流 |
+| 流量治理 | 偏轻：retry / timeout / traffic-split（需 SMI CRD（自定义资源定义）），无原生熔断/限流 |
 | 熔断/限流 | 原生不支持，需配合外部组件 |

@@ -1,9 +1,9 @@
-# Grafana Loki 数据源配置说明
+# Grafana（可视化面板） Loki 数据源配置说明
 
 ## 这是什么
 
-Grafana 中 Loki 数据源的完整配置，导入后可在 Grafana Explore 中查询 Loki 日志，
-并且日志中的 `trace_id` 会自动变成可点击的 SkyWalking 跳转链接。
+Grafana 中 Loki（日志系统） 数据源的完整配置，导入后可在 Grafana Explore 中查询 Loki 日志，
+并且日志中的 `trace_id` 会自动变成可点击的 SkyWalking（APM 调用链追踪） 跳转链接。
 
 ---
 

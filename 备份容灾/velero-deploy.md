@@ -16,7 +16,7 @@ MinIO (monitoring 命名空间, 既有)  →  bucket: velero
    凭据: minioadmin / minioadmin
 ```
 
-- Velero 版本：v1.14.1（镜像已同步 Harbor：`192.168.1.61/velero/velero:v1.14.1`）
+- Velero 版本：v1.14.1（镜像已同步 Harbor（私有镜像仓库）：`192.168.1.61/velero/velero:v1.14.1`）
 - AWS 插件：`192.168.1.61/velero/velero-plugin-for-aws:v1.11.0`
 - 镜像获取统一走 `外网资源同步/sync_from_us.ps1`（US→H1→Harbor），集群从 Harbor 自动拉取
 
@@ -29,7 +29,7 @@ kubectl -n monitoring scale deploy minio --replicas=1
 kubectl -n monitoring rollout status deploy/minio
 ```
 
-创建 bucket（一次性 `mc` Pod，镜像 `192.168.1.61/minio/mc:latest`）：
+创建 bucket（一次性 `mc` Pod（容器组），镜像 `192.168.1.61/minio/mc:latest`）：
 
 ```bash
 kubectl -n monitoring run mc-velero-create --image=192.168.1.61/minio/mc:latest --restart=Never \
@@ -84,7 +84,7 @@ kubectl delete namespace reliability-demo-restored
 ## 五、资源占用
 
 - velero deployment：1 副本，~100Mi，落在 worker
-- node-agent DaemonSet：仅 worker 节点运行（master 有 NoSchedule 污点，自动不调度，符合预期）
+- node-agent DaemonSet（守护进程集）：仅 worker 节点运行（master 有 NoSchedule 污点，自动不调度，符合预期）
 - 对聚焦模式内存预算几乎无影响（验证时 worker1 39% / worker2 53%）
 
 ## 六、常用命令速查

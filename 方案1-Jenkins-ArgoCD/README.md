@@ -1,8 +1,8 @@
-# Jenkins + ArgoCD GitOps CI/CD 总结
+# Jenkins（CI 持续集成工具） + ArgoCD GitOps CI/CD 总结
 
-> 基于自建 K8s 集群（Harbor + ArgoCD + Jenkins + Git Server）的真实环境验证
+> 基于自建 K8s 集群（Harbor + ArgoCD（GitOps 持续交付工具） + Jenkins + Git Server）的真实环境验证
 > 验证项目：`snownlp-observability-demo`（SnowNLP 情感分析 + 可观测性三支柱）
-> 基础设施：`可观测性`（Prometheus/Grafana/Loki/SkyWalking 监控体系）
+> 基础设施：`可观测性`（Prometheus/Grafana/Loki/SkyWalking（APM 调用链追踪） 监控体系）
 
 ---
 
@@ -82,9 +82,9 @@
 
 ## 二、两个项目体系
 
-本方案由两个 GitOps 项目组成，通过 **monitoring 命名空间** 关联：
+本方案由两个 GitOps（以 Git 为唯一真相源的运维模式） 项目组成，通过 **monitoring 命名空间** 关联：
 
-### 2.1 snownlp-observability-demo（业务应用 + CI/CD）
+### 2.1 snownlp-observability-demo（业务应用 + CI/CD（持续集成/持续交付））
 
 ```
 snownlp-observability-demo/
@@ -164,7 +164,7 @@ Step 10: K8s 滚动更新 Deployment，新 Pod 启动并注册到 SkyWalking
 
 | 方式 | 操作 | 问题 |
 |------|------|------|
-| ❌ `kubectl set image` | CI 直接操作 K8s | ArgoCD 不知道变更，下次 sync 会回滚 |
+| ❌ `kubectl set image` | CI 直接操作 K8s（Kubernetes，容器编排引擎） | ArgoCD 不知道变更，下次 sync 会回滚 |
 | ❌ `kubectl apply -f` | CI 直接 apply 新 YAML | 绕过了 GitOps，违反唯一真相源原则 |
 | ✅ `sed → git commit → git push` | 修改 Git 清单 | ArgoCD 自动检测、自动同步、可审计、可回滚 |
 
@@ -176,7 +176,7 @@ Step 10: K8s 滚动更新 Deployment，新 Pod 启动并注册到 SkyWalking
 |------|------|------|------|
 | **Jenkins** | `http://jenkins.test:31716` | 无需登录 (Unsecured) | CI 流水线 |
 | **ArgoCD** | `http://argocd.test:31716` | `admin` / `wRRzfFrgasxcpwwq` | GitOps CD |
-| **Harbor** | `192.168.1.61` | admin / Harbor12345 | 镜像仓库 |
+| **Harbor（私有镜像仓库）** | `192.168.1.61` | admin / Harbor12345 | 镜像仓库 |
 | **Git Server** | `git://git-server.git.svc.cluster.local` | 无需认证 | 源代码管理 |
 | **K8s 集群** | `https://kubernetes.default.svc` | ServiceAccount | 部署目标 |
 
@@ -184,8 +184,8 @@ Step 10: K8s 滚动更新 Deployment，新 Pod 启动并注册到 SkyWalking
 
 | 组件 | 地址 | 说明 |
 |------|------|------|
-| **Grafana** | `http://grafana.lab.local:31716` | admin / admin |
-| **Prometheus** | `http://prometheus.lab.local:31716` | 指标查询 |
+| **Grafana（可视化面板）** | `http://grafana.lab.local:31716` | admin / admin |
+| **Prometheus（指标监控系统）** | `http://prometheus.lab.local:31716` | 指标查询 |
 | **SkyWalking UI** | `http://skywalking.lab.local:31716` | 调用链追踪 |
 | **SnowNLP Demo** | `http://snownlp.lab.local:31716` | 情感分析 Demo |
 
@@ -229,12 +229,12 @@ monitoring 命名空间（统一的可观测性环境）
 **关联点**：
 - 业务应用的 Prometheus 注解 → `scrape by Prometheus`
 - 业务应用的 SkyWalking env → `report to skywalking-oap.monitoring:11800`
-- 业务日志的 trace_id → `Promtail extract → Loki → Grafana derivedFields → SkyWalking URL`
-- Ingress 统一路由 → `snownlp.lab.local → snownlp-demo:8000`
+- 业务日志的 trace_id → `Promtail extract → Loki（日志系统） → Grafana derivedFields → SkyWalking URL`
+- Ingress（入口规则） 统一路由 → `snownlp.lab.local → snownlp-demo:8000`
 
 ---
 
-## 七、Jenkins Pipeline 7 Stage 详解
+## 七、Jenkins Pipeline（流水线） 7 Stage 详解
 
 ### Stage 1: Checkout
 - 从 Git Server 拉取 `main` 分支代码

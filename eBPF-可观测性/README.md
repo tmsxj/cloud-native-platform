@@ -1,8 +1,8 @@
-# eBPF 可观测性 — Cilium 部署实验
+# eBPF 可观测性 — Cilium（基于 eBPF 的 CNI/网络方案） 部署实验
 
 > 创建日期：2026-07-07
-> 目标：在现有 K3s + Calico 集群上部署 Cilium，验证 eBPF 可观测性能力
-> 状态：**Cilium Agent 部署成功，eBPF 程序已加载**
+> 目标：在现有 K3s + Calico（CNI/网络策略方案） 集群上部署 Cilium，验证 eBPF 可观测性能力
+> 状态：**Cilium Agent 部署成功，eBPF（内核可编程技术） 程序已加载**
 
 ---
 
@@ -12,9 +12,9 @@
 |:---|:---|
 | `Cilium-生产配置指南.md` | 生产级完整接管配置（路由/IPAM/BPF/策略/Hubble/加密/资源） |
 | `故障排查手册.md` | 8 类踩坑快速定位（CrashLoop / taint 死锁 / 数据源选错 / Hubble 无数据…） |
-| `cilium-values.yaml` | 实际部署值（已接管 CNI，kube-proxy 保留） |
+| `cilium-values.yaml` | 实际部署值（已接管 CNI（容器网络接口），kube-proxy 保留） |
 | `hubble-servicemonitor.yaml` | Hubble 指标抓取（9965，带 `prometheus: managed`） |
-| `cilium-dashboard.json` | Grafana 面板（35 面板含 Hubble 行） |
+| `cilium-dashboard.json` | Grafana（可视化面板） 面板（35 面板含 Hubble 行） |
 | `import_cilium_dashboard.py` / `create_grafana_datasource.py` | 面板导入 / 数据源创建 |
 | `backup/` | Calico 回退依据（非活跃配置） |
 
@@ -41,7 +41,7 @@ Pod ──> Cilium CNI (05-cilium.conflist) ──> eBPF 数据面 (VXLAN 隧道
 
 ## 与 Calico 的关系
 
-- 同集群同刻只能有一个 CNI 真正接管 Pod 网络（kubelet 按 CNI 配置文件名字典序加载）。
+- 同集群同刻只能有一个 CNI 真正接管 Pod（容器组） 网络（kubelet 按 CNI 配置文件名字典序加载）。
 - 本项目现状：**Cilium 已实际接管**，Calico 仅作回退备份；上层全家桶不依赖特定 CNI。
 - 选型对比见 `../CNI总览/CNI-生产配置对比.md`；Calico 资料见 `../Calico-配置指南/`。
 
@@ -54,10 +54,10 @@ Pod ──> Cilium CNI (05-cilium.conflist) ──> eBPF 数据面 (VXLAN 隧道
 | 内核版本 | 5.15.0-185-generic | ✅ 支持 eBPF（4.10+） |
 | CNI | Calico v3.26.0 | 当前网络插件 |
 | kube-proxy | DaemonSet（iptables模式） | K3s 自带 |
-| K8s 版本 | v1.28.15 (K3s) | ✅ Cilium 1.17 支持 |
+| K8s（Kubernetes，容器编排引擎） 版本 | v1.28.15 (K3s) | ✅ Cilium 1.17 支持 |
 | Pod CIDR | 10.244.0.0/16 | Calico IP-in-IP |
 | 节点 | 3 master (2C/2G) + 2 worker (8C/8G) | worker 有充足资源 |
-| Helm | v3.21.2 | 本次安装 |
+| Helm（K8s 包管理器） | v3.21.2 | 本次安装 |
 
 ---
 
@@ -160,7 +160,7 @@ kubectl get ds cilium -n kube-system
 
 ### 坑 6：helm upgrade 滚动更新时 `agent-not-ready` taint 死锁（Revision 5 实战踩坑）
 
-**现象**：执行 `helm upgrade` 接入 Prometheus 后，Cilium DaemonSet 滚动更新，部分节点上的新 Pod 长时间 `Pending`。`kubectl describe pod` 报：
+**现象**：执行 `helm upgrade` 接入 Prometheus（指标监控系统） 后，Cilium DaemonSet 滚动更新，部分节点上的新 Pod 长时间 `Pending`。`kubectl describe pod` 报：
 `0/5 nodes are available: 1 node(s) had untolerated taint {node.cilium.io/agent-not-ready: }. ... 4 node(s) didn't match Pod's node affinity/selector.`
 
 **原因**：滚动更新删除旧 Cilium Pod 时，节点残留了 `node.cilium.io/agent-not-ready:NoSchedule` taint（Cilium Agent 启动早期会打该 taint，ready 后移除）。而新 Pod 的 `tolerations` 里**没有**该 taint 的容忍项，且 Pod 因 taint 无法调度 → Agent 永远不 ready → taint 永不移除，形成死锁。实测 `agentNotReadyTaintKey: ""` 在 Cilium 1.17 确实生效（helm values 确认、Agent ready 后节点 taint 干净），但滚动更新窗口内仍可能短暂残留。
@@ -170,7 +170,7 @@ kubectl get ds cilium -n kube-system
    ```bash
    kubectl taint nodes --all node.cilium.io/agent-not-ready:NoSchedule-
    ```
-2. 若个别节点 Pod 仍 Pending，删除该 Pod 触发 DaemonSet 立即重建：
+2. 若个别节点 Pod 仍 Pending，删除该 Pod 触发 DaemonSet（守护进程集） 立即重建：
    ```bash
    kubectl delete pod <cilium-pod> -n kube-system
    ```
@@ -184,7 +184,7 @@ kubectl get ds cilium -n kube-system
 
 **原因**：集群里有两个 Prometheus 实例，Grafana 默认数据源指向了「错的那个」：
 - `prometheus-server`（kube-prometheus 社区版，Grafana 默认数据源 id=1，url `prometheus-server.monitoring:80`）——其 `serviceMonitorSelector` 不匹配 `prometheus: managed` 标签，**不抓取 Cilium**。
-- `prometheus-managed-0`（为 Cilium 建的 `managed` Prometheus CR，Service `prometheus-operated.monitoring:9090`）——Cilium ServiceMonitor 的 `prometheus: managed` 标签精确命中它，**Cilium 数据全在这里**。
+- `prometheus-managed-0`（为 Cilium 建的 `managed` Prometheus CR，Service（服务，集群内服务发现） `prometheus-operated.monitoring:9090`）——Cilium ServiceMonitor 的 `prometheus: managed` 标签精确命中它，**Cilium 数据全在这里**。
 
 **解决**：在 Grafana 新建专用数据源指向 managed Prometheus，并让 dashboard 绑定它：
 - 名称 `Prometheus-Cilium`，uid `afrhyqopp15ogc`，类型 `prometheus`，url `http://prometheus-operated.monitoring:9090`，access `proxy`
@@ -215,8 +215,8 @@ kubectl get ds cilium -n kube-system
 | 组件 | 状态 | 说明 |
 |:---|:---|:---|
 | Cilium Agent (DaemonSet) | 5/5 Running | 每节点一个，1/1 Ready |
-| Cilium Envoy | 5/5 Running | 外部 Envoy proxy |
-| Cilium Operator | 1/1 Running | Deployment |
+| Cilium Envoy（数据面代理） | 5/5 Running | 外部 Envoy proxy |
+| Cilium Operator | 1/1 Running | Deployment（部署，无状态工作负载） |
 | Hubble UI | 2/2 Running | Web 界面 |
 | Hubble Relay | Running | 通过 listenAddress: :4244 启用 Hubble gRPC server，已稳定 24h+ |
 | Cilium Metrics (cilium-agent) | ClusterIP :9962 | eBPF/Hubble 指标端点，供 Prometheus 抓取 |
@@ -227,7 +227,7 @@ kubectl get ds cilium -n kube-system
 
 ### Cilium Agent 关键指标
 
-- **Cluster health**: 5/5 reachable
+- **Cluster（集群） health**: 5/5 reachable
 - **Controller Status**: 32/32 healthy
 - **Proxy Status**: OK, Envoy external
 - **IPAM**: 4/254 allocated from 10.0.4.0/24
@@ -307,7 +307,7 @@ kubectl get crds | grep cilium.io | awk '{print $1}' | xargs kubectl delete crd
 
 1. **Tetragon**：Cilium 生态的 eBPF 可观测性工具，不涉及网络，更适合纯监控场景
 2. **Cilium CNI Chaining**：`cni.chainingMode=generic-veth`，附加到 Calico 上，可启用 Hubble
-3. **Prometheus 集成（已完成 ✅）**：Revision 5 已开启 `prometheus.enabled` + `prometheus.serviceMonitor.enabled`，并给 ServiceMonitor 打 `prometheus: managed` 标签以匹配 Prometheus Operator 实例（其 `serviceMonitorSelector` 要求该标签）。Cilium eBPF（agent 9962）与 **Hubble 流量指标（hubble-metrics 9965，见坑 8）** 均已进入 `managed` Prometheus 实例（共 10 targets）。
+3. **Prometheus 集成（已完成 ✅）**：Revision 5 已开启 `prometheus.enabled` + `prometheus.serviceMonitor.enabled`，并给 ServiceMonitor 打 `prometheus: managed` 标签以匹配 Prometheus Operator（操作符，自动化运维控制器） 实例（其 `serviceMonitorSelector` 要求该标签）。Cilium eBPF（agent 9962）与 **Hubble 流量指标（hubble-metrics 9965，见坑 8）** 均已进入 `managed` Prometheus 实例（共 10 targets）。
 4. **Grafana Cilium Dashboard（已完成 ✅）**：自建 `Cilium eBPF Agent Monitoring` dashboard（uid `cilium-ebpf-mon`，35 面板含「Hubble 网络可观测性」行），基于 agent 与 Hubble 真实暴露指标，绑定专用数据源 `Prometheus-Cilium`（uid `afrhyqopp15ogc` → `prometheus-operated.monitoring:9090`）。注意 Grafana 默认数据源 `prometheus-server` 不抓 Cilium（见坑 7）。
 
 ---

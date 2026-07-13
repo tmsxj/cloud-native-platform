@@ -1,14 +1,14 @@
-# Falco 运行时安全（第 22 项）
+# Falco（运行时安全检测） 运行时安全（第 22 项）
 
-> 拼齐 DevSecOps 三层：Trivy 镜像扫描 + Kyverno 准入控制 + **Falco 运行时检测**。
+> 拼齐 DevSecOps 三层：Trivy 镜像扫描 + Kyverno（策略即代码引擎） 准入控制 + **Falco 运行时检测**。
 > 在集群内网、节点无外网、聚焦模式下部署 Falco 0.44.1（DaemonSet，仅 worker 运行）。
 
 ## 架构与约束
 
-- **Falco** 以 DaemonSet 跑在每个节点，用 eBPF 在内核捕获 syscall，匹配规则产生安全告警（stdout / 可接 falcosidekick 转发）。
-- 集群内网无外网 → 镜像必须走 `外网资源同步/sync_from_us.ps1` 进 Harbor；YAML 里 image 写 Harbor 地址；kubelet 自动从 Harbor 拉。
+- **Falco** 以 DaemonSet（守护进程集） 跑在每个节点，用 eBPF 在内核捕获 syscall，匹配规则产生安全告警（stdout / 可接 falcosidekick 转发）。
+- 集群内网无外网 → 镜像必须走 `外网资源同步/sync_from_us.ps1` 进 Harbor（私有镜像仓库）；YAML 里 image 写 Harbor 地址；kubelet 自动从 Harbor 拉。
 - **必须挡在 master 外**：master 内存红线扛不住；利用 master 默认 `NoSchedule` 污点，把 `tolerations` 置空即可（官方 chart 默认竟容忍 master，需覆盖）。
-- **聚焦模式**：全家桶已 scale 0，仅控制面 + Cilium + MinIO 在跑；Falco 落在 worker 即可。
+- **聚焦模式**：全家桶已 scale 0，仅控制面 + Cilium（基于 eBPF 的 CNI/网络方案） + MinIO 在跑；Falco 落在 worker 即可。
 
 ## 镜像获取
 
@@ -71,6 +71,6 @@ Warning Sensitive file opened for reading by non-trusted program
 
 ## 资源
 
-- 每节点 1 个 Pod，request 256Mi / limit 512Mi，cpu 100m/500m。
+- 每节点 1 个 Pod（容器组），request 256Mi / limit 512Mi，cpu 100m/500m。
 - 仅 worker 运行（2 Pod），master 不受影响。
 - 卸载：`helm -n falco uninstall falco`（保留命名空间 `falco`）。

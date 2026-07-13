@@ -1,16 +1,16 @@
-# Cilium 生产配置指南
+# Cilium（基于 eBPF 的 CNI/网络方案） 生产配置指南
 
 > 创建日期：2026-07-09
-> 定位：CNI / 网络 / 可观测性 一体化数据面（eBPF 原生）
+> 定位：CNI（容器网络接口） / 网络 / 可观测性 一体化数据面（eBPF 原生）
 > 适用：云原生新平台、追求性能与七层可见性、节点内核 ≥5.4 的环境
-> 与本项目关系：当前集群已按本指南**完整接管 CNI**（`cni.enabled=true`、`kubeProxyReplacement=false` 保留 kube-proxy），Calico 已下电并备份为 `10-calico.conflist.cilium_bak`；Cilium 1.17.6 运行正常，5 节点 Ready。本指南给出生产级配置与下方实测切换记录。
+> 与本项目关系：当前集群已按本指南**完整接管 CNI**（`cni.enabled=true`、`kubeProxyReplacement=false` 保留 kube-proxy），Calico（CNI/网络策略方案） 已下电并备份为 `10-calico.conflist.cilium_bak`；Cilium 1.17.6 运行正常，5 节点 Ready。本指南给出生产级配置与下方实测切换记录。
 
 ---
 
 ## 一、何时选 Cilium
 
-- 节点内核 ≥5.10（推荐），可启用全部 eBPF 能力
-- 想去掉 kube-proxy、去掉 iptables，用 eBPF 做 Service 负载均衡
+- 节点内核 ≥5.10（推荐），可启用全部 eBPF（内核可编程技术） 能力
+- 想去掉 kube-proxy、去掉 iptables，用 eBPF 做 Service（服务，集群内服务发现） 负载均衡
 - 需要七层（HTTP/gRPC/DNS）流量可见性 → Hubble
 - 追求高吞吐、低延迟，或大规模集群性能天花板
 
@@ -20,7 +20,7 @@
 |:---|:---|
 | 内核 | ≥4.19 基础 eBPF；≥5.4 支持 kubeProxyReplacement；≥5.10 全部特性 |
 | 架构 | amd64 / arm64 |
-| Helm | ≥3.8 |
+| Helm（K8s 包管理器） | ≥3.8 |
 | 冲突 CNI | 安装前**必须移除**其他 CNI 的配置与 DaemonSet（如 Calico） |
 | kube-proxy | 可被 Cilium 替换，需确认无外部组件依赖它 |
 
@@ -103,16 +103,16 @@ spec:
 
 | 现象 | 排查命令 / 方向 |
 |:---|:---|
-| Pod 网络不通 | `cilium status`、`cilium connectivity test` |
+| Pod（容器组） 网络不通 | `cilium status`、`cilium connectivity test` |
 | Service 不通 | 确认 kubeProxyReplacement 与 kube-proxy 互斥，只留其一 |
-| Hubble 无数据 | 查 `hubble-relay` Pod 状态、ServiceMonitor 是否接入 Prometheus |
+| Hubble 无数据 | 查 `hubble-relay` Pod 状态、ServiceMonitor 是否接入 Prometheus（指标监控系统） |
 | 内核不支持 | `uname -r`；版本不足则降级 `kubeProxyReplacement=false`（legacy 模式） |
 
-> 部署期踩坑（CrashLoop / taint 死锁 / Grafana 数据源选错 / Hubble 无数据等）已汇总至 `故障排查手册.md`，按现象快速定位。
+> 部署期踩坑（CrashLoop / taint 死锁 / Grafana（可视化面板） 数据源选错 / Hubble 无数据等）已汇总至 `故障排查手册.md`，按现象快速定位。
 
 ## 七、与本项目现状的关系
 
-当前集群 **Cilium 已完整接管 CNI**（`cni.enabled=true`、`kubeProxyReplacement=false` 保留 kube-proxy），Calico 已下电、CNI 配置备份为 `10-calico.conflist.cilium_bak`，CRD 已清理。5 节点全部 Ready，Cilium 1.17.6 运行正常。
+当前集群 **Cilium 已完整接管 CNI**（`cni.enabled=true`、`kubeProxyReplacement=false` 保留 kube-proxy），Calico 已下电、CNI 配置备份为 `10-calico.conflist.cilium_bak`，CRD（自定义资源定义） 已清理。5 节点全部 Ready，Cilium 1.17.6 运行正常。
 
 > 注：是否保留 Calico 作为运行态备援可自行取舍；作为**资料沉淀**，Calico 配置见 `../Calico-配置指南/`。切换的完整实战与踩坑见下方第八节。
 
@@ -136,7 +136,7 @@ spec:
    ```
 3. **致命坑（本次已踩，务必先固化）**：节点在 CNI 切换期处于 `NotReady`，被 kube-controller-manager 自动打上
    `node.kubernetes.io/not-ready:NoSchedule` 与 `node.kubernetes.io/network-unavailable:NoSchedule` 两个 taint。
-   而 Cilium agent DaemonSet **默认只容忍 `control-plane` / `master` / `agent-not-ready` 三条**，不容忍上面两个
+   而 Cilium agent DaemonSet（守护进程集） **默认只容忍 `control-plane` / `master` / `agent-not-ready` 三条**，不容忍上面两个
    → agent Pod 始终 `DESIRED=0` → CNI 永远起不来 → 节点永远 NotReady（鸡生蛋死锁）。
    - 现象：`kubectl get ds cilium` 显示 `DESIRED 0`；`kubectl get nodes` 全 `NotReady`；但 apiserver/etcd/coredns 其实健康（`/healthz` 返回 ok）。
    - 根治：在 `cilium-values.yaml` 的 `tolerations` 追加对这两个 taint 的容忍（仓库 `cilium-values.yaml` 已固化）。重装/升级后 DaemonSet 自带完整容忍，agent 先调度把 CNI 拉起，节点随即 Ready、taint 自动消失。

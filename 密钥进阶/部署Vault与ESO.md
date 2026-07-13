@@ -1,24 +1,24 @@
-# 第25项 密钥进阶：HashiCorp Vault + External Secrets Operator
+# 第25项 密钥进阶：HashiCorp Vault + External Secrets Operator（外部密钥操作符，ESO）
 
-把集群里的「密钥管理」从 K8s 原生 Secret / Sealed Secrets 往前推一层，落地**企业级动态密钥管理**：
-集中密钥库（Vault）通过 External Secrets Operator 自动把密钥同步成 K8s Secret，应用无感知、不改代码即可使用，且密钥不在 Git 中明文出现。
+把集群里的「密钥管理」从 K8s 原生 Secret（密钥对象） / Sealed Secrets 往前推一层，落地**企业级动态密钥管理**：
+集中密钥库（Vault）通过 External Secrets Operator（操作符，自动化运维控制器） 自动把密钥同步成 K8s Secret，应用无感知、不改代码即可使用，且密钥不在 Git 中明文出现。
 
 ---
 
 ## 一、目标
 
-- Vault 作为集中密钥库，启用 KV v2 引擎存放密钥（如数据库密码）
-- External Secrets Operator（ESO）连接 Vault，把指定密钥自动同步为 K8s 原生 Secret
+- Vault（密钥管理系统） 作为集中密钥库，启用 KV v2 引擎存放密钥（如数据库密码）
+- External Secrets Operator（ESO）连接 Vault，把指定密钥自动同步为 K8s（Kubernetes，容器编排引擎） 原生 Secret
 - 形成闭环：**Vault 改密 → ESO 定时刷新 → K8s Secret 更新 → 应用热加载**
 
-## 二、组件与镜像（离线 Harbor）
+## 二、组件与镜像（离线 Harbor（私有镜像仓库））
 
 | 组件 | 版本 | Harbor 镜像 |
 |---|---|---|
 | Vault | 1.19.4 | `192.168.1.61/hashicorp/vault:1.19.4` |
 | External Secrets Operator | 0.18.1 | `192.168.1.61/oci.external-secrets.io/external-secrets/external-secrets:v0.18.1` |
 
-> 镜像均通过 `外网资源同步/sync_from_us.ps1` 从外网拉取后推送到 Harbor（Vault 来自 `hashicorp/vault`，ESO 实际使用的是 `oci.external-secrets.io/external-secrets/external-secrets`，官方 install manifest 三个 Deployment 共用同一镜像）。
+> 镜像均通过 `外网资源同步/sync_from_us.ps1` 从外网拉取后推送到 Harbor（Vault 来自 `hashicorp/vault`，ESO 实际使用的是 `oci.external-secrets.io/external-secrets/external-secrets`，官方 install manifest 三个 Deployment（部署，无状态工作负载） 共用同一镜像）。
 
 ## 三、部署架构
 
@@ -48,8 +48,8 @@
 ## 四、部署步骤
 
 1. **同步镜像**（见 `外网资源同步/sync_from_us.ps1`）
-2. **部署 Vault**：`kubectl apply -f vault.yaml`（Namespace + Deployment + Service，dev 模式）
-3. **部署 ESO**：`kubectl apply -f eso-install.yaml`（CRD + RBAC + controller/webhook/cert-controller，镜像与 namespace 已改为离线/独立 ns）
+2. **部署 Vault**：`kubectl apply -f vault.yaml`（Namespace + Deployment + Service（服务，集群内服务发现），dev 模式）
+3. **部署 ESO**：`kubectl apply -f eso-install.yaml`（CRD + RBAC（基于角色的访问控制） + controller/webhook/cert-controller，镜像与 namespace 已改为离线/独立 ns）
 4. **初始化 Vault**（进入 pod）：
    ```sh
    vault secrets enable -path=kv kv-v2
@@ -62,7 +62,7 @@
 
 ## 五、踩坑实录（重点）
 
-离线 + 严格 Kyverno 安全基线环境下，官方 manifest 不能直接 apply，依次解决了三类问题：
+离线 + 严格 Kyverno（策略即代码引擎） 安全基线环境下，官方 manifest 不能直接 apply，依次解决了三类问题：
 
 ### 坑1：Kyverno 镜像仓库放行规则写死 `:5000`
 `restrict-image-registries` 策略的 pattern 是 `192.168.1.61:5000/* | ghcr.io/*`，但集群实际从 `192.168.1.61/<项目>`（无端口，已验证 falco 以此地址正常 pull）拉镜像。所有新建负载（含 Vault/ESO）因此被拒。
@@ -110,5 +110,5 @@ ESO 默认 `refreshInterval: 1m`，Vault 中改密后最多 1 分钟自动刷新
 
 - **Vault 不要再用 dev 模式**：改用 Raft（Integrated Storage）或 Consul 后端做持久化；用 **auto-unseal**（Transit/KMS）避免手动 unseal；根 token 与 unseal key 用外部机密管理，禁止固定 `root`。
 - **ESO 高可用**：controller/webhook 可多副本；跨命名空间复用密钥时用 `ClusterSecretStore`，避免每个 ns 重复定义。
-- **与第24项供应链安全结合**：Vault 镜像走 cosign 签名 + Kyverno `verifyImages` 验签；Vault 中存放的密钥本身也可加密（transit 引擎）；ESO 拉取的 Secret 同样经过集群准入校验。
+- **与第24项供应链安全结合**：Vault 镜像走 cosign（镜像签名工具） 签名 + Kyverno `verifyImages` 验签；Vault 中存放的密钥本身也可加密（transit 引擎）；ESO 拉取的 Secret 同样经过集群准入校验。
 - **审计**：Vault 开 Audit Devices，所有密钥访问可追溯，补全 DevSecOps 审计一环。

@@ -1,6 +1,6 @@
 # Sealed Secrets — Git 安全密钥管理
 
-> **状态**: 配置就绪，待镜像搬运后部署 | **依赖**: Harbor 中有 `sealed-secrets-controller` 镜像
+> **状态**: 配置就绪，待镜像搬运后部署 | **依赖**: Harbor（私有镜像仓库） 中有 `sealed-secrets-controller` 镜像
 
 ---
 
@@ -82,7 +82,7 @@ chmod +x kubeseal-linux-amd64 && sudo mv kubeseal-linux-amd64 /usr/local/bin/kub
 Invoke-WebRequest -Uri "https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.1/kubeseal-windows-amd64.exe" -OutFile "C:\tools\kubeseal.exe"
 ```
 
-### Step 4: 加密 Secret
+### Step 4: 加密 Secret（密钥对象）
 
 ```bash
 # 1. 获取 Controller 公钥 (自动从 K8s API 获取)
@@ -99,9 +99,9 @@ cat sealed-harbor-registry.yaml
 git add sealed-harbor-registry.yaml && git commit -m "Add sealed harbor registry secret" && git push
 ```
 
-### Step 5: ArgoCD 自动同步
+### Step 5: ArgoCD（GitOps 持续交付工具） 自动同步
 
-ArgoCD 检测到 Git 变更后自动 sync → Controller 解密 SealedSecret → 生成普通 Secret → Pod 可以使用。
+ArgoCD 检测到 Git 变更后自动 sync → Controller 解密 SealedSecret → 生成普通 Secret → Pod（容器组） 可以使用。
 
 ---
 
@@ -141,10 +141,10 @@ ArgoCD 检测到 Git 变更后自动 sync → Controller 解密 SealedSecret →
 
 ## 与云厂商方案的对比
 
-| | Sealed Secrets | 云厂商 (SSM/KMS) | HashiCorp Vault |
+| | Sealed Secrets | 云厂商 (SSM/KMS) | HashiCorp Vault（密钥管理系统） |
 |---|---|---|---|
 | 费用 | 免费 | 按 API 调用计费 | 免费社区版 |
 | 外网依赖 | 无 | 需要 | 需要 |
 | 复杂度 | ⭐ | ⭐⭐ | ⭐⭐⭐⭐ |
-| GitOps 兼容 | ✅ 天然兼容 | 需 External Secrets Operator | 需额外集成 |
-| 适用场景 | 内网自建 K8s | 公有云 K8s | 大型企业多集群 |
+| GitOps 兼容 | ✅ 天然兼容 | 需 External Secrets Operator（外部密钥操作符，ESO） | 需额外集成 |
+| 适用场景 | 内网自建 K8s（Kubernetes，容器编排引擎） | 公有云 K8s | 大型企业多集群 |

@@ -1,7 +1,7 @@
-# Calico 生产配置详解
+# Calico（CNI/网络策略方案） 生产配置详解
 
 > 创建日期：2026-07-09
-> 定位：成熟稳定的 CNI / 网络策略引擎（NetworkPolicy），本项目已做**集群内真实切换验证**
+> 定位：成熟稳定的 CNI（容器网络接口） / 网络策略引擎（NetworkPolicy），本项目已做**集群内真实切换验证**
 > 与本项目关系：集群当前由 Calico 接管 CNI（实践切换所得）；本目录为独立生产指导方案。
 > 配套：`README.md`（导航/架构/选型）、`故障排查手册.md`（踩坑速查）
 
@@ -20,7 +20,7 @@
 |:---|:---|
 | 内核 | ≥3.10（iptables 数据面）；BPF 数据面需 ≥5.10（v3.13+） |
 | 架构 | amd64 / arm64 |
-| 冲突 CNI | 安装前必须移除其他 CNI 配置与 DaemonSet（如 Cilium） |
+| 冲突 CNI | 安装前必须移除其他 CNI 配置与 DaemonSet（如 Cilium（基于 eBPF 的 CNI/网络方案）） |
 | kube-proxy | 保留（iptables 模式）；BPF 数据面下可去 kube-proxy |
 | 封装 | 跨子网用 IP-in-IP 或 VXLAN；同二层可直连（CrossSubnet / Never） |
 
@@ -80,7 +80,7 @@ spec:
 | 组件 | 部署 | 状态 |
 |:---|:---|:---|
 | `calico-node` | DaemonSet（`kube-system`），每节点 1 个 | 5/5 `1/1 Running`（切换后重启次数稳定，不再崩溃循环） |
-| `calico-kube-controllers` | Deployment | 负责 IPAM / CRD 同步 |
+| `calico-kube-controllers` | Deployment（部署，无状态工作负载） | 负责 IPAM / CRD 同步 |
 | `calico-kubeconfig` | 节点 `/etc/cni/net.d/` | CNI 插件访问 API server 的凭据 |
 
 ### 3.4 数据面
@@ -117,7 +117,7 @@ spec:
     - { protocol: TCP, port: 8080 }
 ```
 
-> 若需 L7（HTTP/DNS 感知）策略或 eBPF 数据面，参照 `../eBPF-可观测性/Cilium-生产配置指南.md` 的 Cilium 方案。
+> 若需 L7（HTTP/DNS 感知）策略或 eBPF（内核可编程技术） 数据面，参照 `../eBPF-可观测性/Cilium-生产配置指南.md` 的 Cilium 方案。
 
 ## 五、大规模（>50 节点）：Typha
 
@@ -165,14 +165,14 @@ spec:
 
 - calico-node 在 Cilium 接管期处于「容器 Running 但 CNI 角色失效」的异常态（重启 30+ 次）；恢复 `10-calico.conflist` 并重启节点后，立刻回到 `1/1 Running` 稳定态。
 - 重启过程中 API 会短暂不可达（master 重启瞬间 etcd 抖动），属正常，待节点 `Ready` 后恢复。
-- 切换后 Pod IP 由 Cilium 的 `10.0.x.x` 变为 Calico 的 `10.244.x.x`，全家桶（argocd/cert-manager/ES/Prometheus/Tomcat 等）在 Calico 网络上重建并回到 Running/Ready。
+- 切换后 Pod IP 由 Cilium 的 `10.0.x.x` 变为 Calico 的 `10.244.x.x`，全家桶（argocd/cert-manager/ES/Prometheus（指标监控系统）/Tomcat 等）在 Calico 网络上重建并回到 Running/Ready。
 
 ## 八、验证结果（2026-07-09 实测）
 
 | 验证项 | 结果 |
 |:---|:---|
-| calico-node DaemonSet | 5/5 `1/1 Running` |
-| Pod IP 段 | `10.244.235.x`（worker1）/ `10.244.189.x`（worker2），即 IPPool `10.244.0.0/16` |
+| calico-node DaemonSet（守护进程集） | 5/5 `1/1 Running` |
+| Pod（容器组） IP 段 | `10.244.235.x`（worker1）/ `10.244.189.x`（worker2），即 IPPool `10.244.0.0/16` |
 | 宿主机 `tunl0` | `UP`（IP-in-IP 隧道正常） |
 | 跨节点路由 | Pod 默认路由经 Calico veth 网关 `169.254.1.1`，跨子网走 `tunl0` |
 | 全家桶健康 | argocd / cert-manager / elasticsearch / prometheus / tomcat 等均回到 Running/Ready（分布式组件跨节点通信正常） |

@@ -1,10 +1,10 @@
-# 项目实战：K8s 全链路 CI/CD + 可观测性 + 灰度发布
+# 项目实战：K8s 全链路 CI/CD（持续集成/持续交付） + 可观测性 + 灰度发布
 
-> 基于自建 5 节点 kubeadm 集群的 DevOps 实战项目，覆盖 **CI/CD 三方案 → 可观测性三大支柱 → 灰度发布 → K8s 三基石 → 服务网格双栈 → 供应链安全** 全链路，并收敛为完整 **DevSecOps 四层闭环**（扫描 Trivy + 准入 Kyverno + 运行时 Falco + 供应链验签）。
+> 基于自建 5 节点 kubeadm 集群的 DevOps 实战项目，覆盖 **CI/CD 三方案 → 可观测性三大支柱 → 灰度发布 → K8s 三基石 → 服务网格双栈 → 供应链安全** 全链路，并收敛为完整 **DevSecOps 四层闭环**（扫描 Trivy + 准入 Kyverno（策略即代码引擎） + 运行时 Falco + 供应链验签）。
 >
-> 📅 最近更新: 2026-07-12 | 状态: P0~P2b + 长期16~19 全部完成 ✅ | 后续增强 20 可靠性保障 ✅ / 21 Velero 备份容灾 ✅ / 22 Falco 运行时安全 ✅ / 23 服务网格·Linkerd ✅ + Istio ✅(双网格对比演示完成) / 24 供应链安全 ✅(cosign 签名 + Kyverno verifyImages 验签 + SBOM) / 25 密钥进阶 ✅(Vault + External Secrets Operator 自动同步 K8s Secret) | 🔒 聚焦模式已激活（全家桶冻结，专攻 23~31）
+> 📅 最近更新: 2026-07-12 | 状态: P0~P2b + 长期16~19 全部完成 ✅ | 后续增强 20 可靠性保障 ✅ / 21 Velero 备份容灾 ✅ / 22 Falco 运行时安全 ✅ / 23 服务网格·Linkerd ✅ + Istio ✅(双网格对比演示完成) / 24 供应链安全 ✅(cosign 签名 + Kyverno verifyImages 验签 + SBOM) / 25 密钥进阶 ✅(Vault + External Secrets Operator（外部密钥操作符，ESO） 自动同步 K8s Secret) | 🔒 聚焦模式已激活（全家桶冻结，专攻 23~31）
 >
-> 📡 同步镜像: 本仓库同时托管于 GitHub 与 Gitee（[hlxb/cloud-native-platform](https://gitee.com/hlxb/cloud-native-platform)），`git push` 自动双推，两端内容一致。目标实操环境：自建 kubeadm 5 节点离线集群（Cilium/Hubble eBPF 数据面 + Linkerd/Istio 双服务网格）。
+> 📡 同步镜像: 本仓库同时托管于 GitHub 与 Gitee（[hlxb/cloud-native-platform](https://gitee.com/hlxb/cloud-native-platform)），`git push` 自动双推，两端内容一致。目标实操环境：自建 kubeadm 5 节点离线集群（Cilium/Hubble eBPF 数据面 + Linkerd（服务网格）/Istio 双服务网格）。
 >
 > 🗺️ **想按体系化顺序系统学习？看 [学习路线.md](./学习路线.md)（按能力递进的观看顺序，目录结构不变）。**
 
@@ -12,7 +12,7 @@
 
 ## 这是什么？
 
-一套完整的 K8s DevOps 落地工程，从零搭建了 **Harbor(镜像仓库) + Jenkins/GitLab CI(持续集成) + ArgoCD(GitOps 持续部署) + Prometheus/Grafana/Loki(S3)/OpenTelemetry+Tempo(LGTM 全栈 S3 化)(可观测性) + Argo Rollouts(灰度发布)**。
+一套完整的 K8s DevOps 落地工程，从零搭建了 **Harbor(镜像仓库) + Jenkins/GitLab CI(持续集成) + ArgoCD(GitOps 持续部署) + Prometheus/Grafana/Loki(S3)/OpenTelemetry（OTel，可观测性数据采集标准）+Tempo(LGTM 全栈 S3 化)(可观测性) + Argo Rollouts(灰度发布)**。
 
 可以作为 DevOps/SRE 岗位的 **面试作品** 或 **企业内部 DevOps 平台参考模板**。
 
@@ -73,10 +73,10 @@
 | 方案 | CI 工具 | CD 工具 | 验证项目 | 适用场景 |
 |------|--------|--------|---------|---------|
 | [**方案1**](./方案1-Jenkins-ArgoCD/) | Jenkins | ArgoCD | SnowNLP 情感分析 (Python) | 已有 Jenkins 的团队 |
-| [**方案2**](./方案2-GitLab-ArgoCD/) | GitLab CI | ArgoCD | Tomcat 应用 (Java) | 使用 GitLab 的团队 |
-| [**方案3**](./方案3-Argo-Rollouts/) | 复用方案2 | Argo Rollouts | Tomcat 多环境灰度 | 需要金丝雀/蓝绿发布 |
+| [**方案2**](./方案2-GitLab（代码托管 + CI 平台）-ArgoCD/) | GitLab CI | ArgoCD | Tomcat 应用 (Java) | 使用 GitLab 的团队 |
+| [**方案3**](./方案3-Argo-Rollouts/) | 复用方案2 | Argo Rollouts（渐进式发布控制器） | Tomcat 多环境灰度 | 需要金丝雀/蓝绿发布 |
 
-> 📊 详细对比见 [三套方案对比](./CI-CD总览/CI-CD-GitOps-三套方案对比.md) | 🎓 生态工具面经见 [CICD 生态工具速览](./CI-CD总览/CICD生态工具速览-理论补充.md)
+> 📊 详细对比见 [三套方案对比](./CI-CD总览/CI-CD-GitOps（以 Git 为唯一真相源的运维模式）-三套方案对比.md) | 🎓 生态工具面经见 [CICD 生态工具速览](./CI-CD总览/CICD生态工具速览-理论补充.md)
 
 ---
 
@@ -222,28 +222,28 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 
 | 分类 | 组件 | 在本项目中的作用 |
 |------|------|----------------|
-| **镜像仓库** | Harbor | 内网 Docker 镜像存储，含 Trivy 漏洞扫描 + 自动清理策略 |
+| **镜像仓库** | Harbor（私有镜像仓库） | 内网 Docker 镜像存储，含 Trivy 漏洞扫描 + 自动清理策略 |
 | **CI** | Jenkins / GitLab CI | 代码构建 → 推送镜像 → 更新 Git YAML |
-| **CD** | ArgoCD | 自动检测 Git 变更 → 同步到 K8s 集群 |
+| **CD** | ArgoCD | 自动检测 Git 变更 → 同步到 K8s（Kubernetes，容器编排引擎） 集群 |
 | **灰度发布** | Argo Rollouts | 金丝雀(Canary) + 蓝绿(BlueGreen) 发布策略 |
-| **配置管理** | Kustomize | base + overlays 多环境配置复用 |
-| **密钥管理** | Sealed Secrets | kubeseal 加密 Harbor 凭据 → 自动解密 → Pod 注入 ✅ |
+| **配置管理** | Kustomize（K8s 清单定制工具） | base + overlays 多环境配置复用 |
+| **密钥管理** | Sealed Secrets | kubeseal 加密 Harbor 凭据 → 自动解密 → Pod（容器组） 注入 ✅ |
 | **证书管理** | cert-manager | 自签 CA → ClusterIssuer → TLS 证书自动颁发 ✅ |
-| **指标监控** | Prometheus + Grafana | 28 targets ALL UP + Cluster Overview Dashboard + 告警规则 |
-| **日志采集** | Loki(S3) + Promtail | 容器日志聚合搜索，trace_id 关联，多租户隔离；存储已切 MinIO(S3) ✅ |
-| **链路追踪** | OpenTelemetry + Tempo(LGTM) | 标准 OTLP 收口（Collector :4317/4318）→ Tempo 单体(3.0) + MinIO(S3) 对象存储；Grafana 接 Tempo 数据源 ✅ |
-| **弹性伸缩** | KEDA + HPA | Cron 定时伸缩 + CPU 指标伸缩 ✅ |
-| **搜索存储** | Elasticsearch 3 节点集群 | ❌ 已卸载（2026-07-09）：trace 存储改 Tempo(对象存储)，释放 ~6Gi local-path + worker 内存 |
+| **指标监控** | Prometheus（指标监控系统） + Grafana | 28 targets ALL UP + Cluster Overview Dashboard + 告警规则 |
+| **日志采集** | Loki（日志系统）(S3) + Promtail | 容器日志聚合搜索，trace_id 关联，多租户隔离；存储已切 MinIO(S3) ✅ |
+| **链路追踪** | OpenTelemetry + Tempo(LGTM) | 标准 OTLP 收口（Collector :4317/4318）→ Tempo 单体(3.0) + MinIO(S3) 对象存储；Grafana（可视化面板） 接 Tempo 数据源 ✅ |
+| **弹性伸缩** | KEDA（基于事件的自动伸缩） + HPA | Cron 定时伸缩 + CPU 指标伸缩 ✅ |
+| **搜索存储** | Elasticsearch 3 节点集群 | ❌ 已卸载（2026-07-09）：trace 存储改 Tempo（链路追踪后端）(对象存储)，释放 ~6Gi local-path + worker 内存 |
 | **持久存储** | NFS Provisioner | 动态 PV 供给，ReadWriteMany，自建 watch loop ✅ |
-| **流量入口** | nginx-ingress + Gateway API | 域名路由 + TLS + 金丝雀权重分流 ✅ |
-| **eBPF 可观测性** | Cilium + Hubble | eBPF 接管 CNI(VXLAN) + Hubble 流量/DNS 可观测 + Grafana eBPF Dashboard ✅ |
-| **混沌工程** | Chaos Mesh | PodChaos/NetworkChaos/StressChaos 注入故障验证系统韧性（详见 `混沌工程-ChaosMesh/`）✅ |
+| **流量入口** | nginx-ingress + Gateway API（网关 API，Ingress 继任标准） | 域名路由 + TLS + 金丝雀权重分流 ✅ |
+| **eBPF 可观测性** | Cilium（基于 eBPF 的 CNI/网络方案） + Hubble | eBPF 接管 CNI(VXLAN) + Hubble 流量/DNS 可观测 + Grafana eBPF Dashboard ✅ |
+| **混沌工程** | Chaos Mesh | PodChaos/NetworkChaos/StressChaos 注入故障验证系统韧性（详见 `混沌工程-ChaosMesh（混沌工程工具）/`）✅ |
 | **策略即代码** | Kyverno | 准入控制：禁 latest 标签 / 限可信仓库 / 要求探针 / 禁特权，替代人工镜像检查（详见 `策略即代码-Kyverno/`）✅ |
 | **可靠性保障** | PDB / ResourceQuota / LimitRange / PriorityClass | 防御性配置：可用性/驱逐安全(PDB) + 资源治理(Quota/LimitRange) + 优雅优先级(PriorityClass)（详见 `可靠性保障/`）✅ |
-| **备份容灾** | Velero + MinIO(S3) | 集群级备份/恢复，复用现有 MinIO 对象存储作 S3 后端；备份+恢复闭环已验证（详见 `备份容灾/`）✅ |
-| **运行时安全** | Falco (modern_ebpf) | 运行时威胁检测：异常进程/提权/敏感文件读取，镜像内置容器插件离线做容器级富化（DevSecOps 三层收尾，详见 `运行时安全/Falco/`）✅ |
-| **供应链安全** | cosign + syft + Kyverno verifyImages | 镜像签名（本地私钥）+ SBOM 生成 + 准入验签（未签名一律拒绝），DevSecOps 第四层闭环（详见 `供应链安全/`）✅ |
-| **密钥进阶** | Vault + External Secrets Operator | 集中密钥管理（Vault KV v2）+ 自动同步为 K8s Secret（SecretStore/ExternalSecret），应用无感知使用动态密钥，DevSecOps 密钥管理层（详见 `密钥进阶/`）✅ |
+| **备份容灾** | Velero（备份容灾工具） + MinIO(S3) | 集群级备份/恢复，复用现有 MinIO 对象存储作 S3 后端；备份+恢复闭环已验证（详见 `备份容灾/`）✅ |
+| **运行时安全** | Falco（运行时安全检测） (modern_ebpf) | 运行时威胁检测：异常进程/提权/敏感文件读取，镜像内置容器插件离线做容器级富化（DevSecOps 三层收尾，详见 `运行时安全/Falco/`）✅ |
+| **供应链安全** | cosign（镜像签名工具） + syft + Kyverno verifyImages | 镜像签名（本地私钥）+ SBOM 生成 + 准入验签（未签名一律拒绝），DevSecOps 第四层闭环（详见 `供应链安全/`）✅ |
+| **密钥进阶** | Vault + External Secrets Operator（操作符，自动化运维控制器） | 集中密钥管理（Vault KV v2）+ 自动同步为 K8s Secret（SecretStore/ExternalSecret），应用无感知使用动态密钥，DevSecOps 密钥管理层（详见 `密钥进阶/`）✅ |
 | **证书安全** | cert-manager | 自签 CA → ClusterIssuer → 4 SAN 域名 TLS ✅ |
 
 ---
@@ -256,7 +256,7 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 | [全局部署指南.md](./全局参考/全局部署指南.md) | 从零到全链路跑通的完整步骤 |
 | [CI-CD-GitOps-三套方案对比.md](./CI-CD总览/CI-CD-GitOps-三套方案对比.md) | 三套方案的架构图和对比表格 |
 | [CICD生态工具速览-理论补充.md](./CI-CD总览/CICD生态工具速览-理论补充.md) | Argo 家族、GitHub Actions 等面试补充 |
-| [K8s-三基石-HPA-存储-Ingress.md](./K8s基础/K8s-三基石-HPA-存储-Ingress.md) | HPA/PVC/Ingress 实战笔记 + 面试速答 |
+| [K8s-三基石-HPA（水平 Pod 伸缩）-存储-Ingress.md](./K8s基础/K8s-三基石-HPA-存储-Ingress.md) | HPA/PVC/Ingress 实战笔记 + 面试速答 |
 | [外网资源同步/](./外网资源同步/) | US→H1→内网：镜像同步 + 外网文件下载 完整工作流 |
 
 ---
@@ -265,7 +265,7 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 
 - ✅ **CI/CD 三方案** — Jenkins/GitLab CI + ArgoCD，全部可部署
 - ✅ **灰度发布** — Argo Rollouts Canary + BlueGreen
-- ✅ **可观测性** — Prometheus/Grafana/Loki 完整配置 + 集群运行中；**traces 已升级为 OpenTelemetry + Tempo(LGTM)（替换原 SkyWalking+ES）**，**Loki 存储也已切到 MinIO(S3) 实现 LGTM 全栈 S3 化**（详见 `可观测性/05-otel/`）
+- ✅ **可观测性** — Prometheus/Grafana/Loki 完整配置 + 集群运行中；**traces 已升级为 OpenTelemetry + Tempo(LGTM)（替换原 SkyWalking（APM 调用链追踪）+ES）**，**Loki 存储也已切到 MinIO(S3) 实现 LGTM 全栈 S3 化**（详见 `可观测性/05-otel/`）
 - ✅ **K8s 三基石** — HPA/PVC/Ingress 已落地验证
 - ✅ **密钥管理** — Sealed Secrets 实操验证 (kubeseal 加密 → 自动解密)
 - ✅ **证书管理** — cert-manager 自签 CA + 4 SAN 域名 TLS
@@ -275,16 +275,16 @@ bash restore-monitoring.sh    # 从备份快照恢复，或 kubectl apply -f arg
 - ✅ **Harbor 清理** — Retention Policy + GC 每日凌晨 3:00
 - ✅ **NFS Provisioner** — 自建动态供给，3 个 PVC 已绑定
 - ✅ **KEDA** — 事件驱动伸缩，Cron ScaledObject 工作日 9-18 扩缩
-- ✅ **Gateway API** — Envoy Gateway v1.2.0，80/20 金丝雀流量分割
-- ❌ **ES 集群** — 已卸载（2026-07-09）：SkyWalking 链路追踪改由 Tempo(对象存储) 承接，ES 三节点 StatefulSet + PVC 全部删除，释放 worker 内存
+- ✅ **Gateway（网关实例） API** — Envoy Gateway v1.2.0，80/20 金丝雀流量分割
+- ❌ **ES 集群** — 已卸载（2026-07-09）：SkyWalking 链路追踪改由 Tempo(对象存储) 承接，ES 三节点 StatefulSet（有状态工作负载） + PVC 全部删除，释放 worker 内存
 - ✅ **Loki 多租户** — auth_enabled + tenant_id + X-Scope-OrgID 隔离
 - ⏳ **Master 加内存** — 运维层面（P2c.10）
-- ✅ **eBPF 可观测性** — Cilium 接管 CNI(VXLAN) + Hubble 流量/DNS 可观测 + Grafana eBPF Dashboard（详见 `eBPF-可观测性/`）
-- ✅ **CNI 双资料** — Cilium 生产配置指南(含跨节点实测) + Calico 生产配置指南 + CNI 总览对比（详见 `eBPF-可观测性/Cilium-生产配置指南.md`、`Calico-配置指南/`、`CNI总览/`）
+- ✅ **eBPF（内核可编程技术） 可观测性** — Cilium 接管 CNI(VXLAN) + Hubble 流量/DNS 可观测 + Grafana eBPF Dashboard（详见 `eBPF-可观测性/`）
+- ✅ **CNI 双资料** — Cilium 生产配置指南(含跨节点实测) + Calico（CNI/网络策略方案） 生产配置指南 + CNI 总览对比（详见 `eBPF-可观测性/Cilium-生产配置指南.md`、`Calico-配置指南/`、`CNI总览/`）
 - ✅ **Chaos Mesh 混沌工程** — chaos-testing 命名空间已部署（worker 限定，master 不跑 daemon）；PodChaos 实测注入并重建目标 Pod（详见 `混沌工程-ChaosMesh/`）
 - ✅ **Kyverno 策略即代码** — kyverno 命名空间已部署（worker 限定）；4 条策略（禁 latest 标签 / 限可信仓库 / 要求探针 / 禁特权）实测拦截违规 Pod、放行合规 Pod（详见 `策略即代码-Kyverno/`）
 - ✅ **可靠性保障套件** — 2 个 PriorityClass + LimitRange + ResourceQuota + PDB(minAvailable=2) 已落地并验证；demo 3 副本 Running 于 worker（详见 `可靠性保障/`）✅
 - ✅ **Velero 备份容灾** — velero 命名空间已部署（复用 monitoring 的 MinIO S3 后端）；备份+恢复闭环实测 Completed(0 error)（详见 `备份容灾/`）✅
-- ✅ **Falco 运行时安全** — falco DaemonSet 仅落 worker（master NoSchedule 挡住）；modern_ebpf + 镜像内置容器插件离线富化；`cat /etc/shadow` 触发 Warning 告警含 container/pod/ns 元信息（详见 `运行时安全/Falco/`）✅
-- ✅ **供应链安全（第24项）** — cosign 本地私钥签名镜像 + syft 生成 SBOM；Kyverno verifyImages 策略（`imageReferences=192.168.1.61:5000/*`，keys 公钥验签 + `rekor.ignoreTlog`/`ctlog.ignoreSCT` 跳过透明日志适配离线）实测：签名镜像放行、未签名镜像被拒（`no signatures found`），DevSecOps 第四层（扫描 Trivy + 准入 Kyverno + 运行时 Falco + 供应链验签）闭环成立（详见 `供应链安全/`）✅
-📋 **后续增强路线（云原生能力补全 20~31）** — ✅ 20 可靠性保障已完成 / ✅ 21 Velero 备份容灾已完成 / ✅ 22 Falco 运行时安全已完成 / 🟢 23 服务网格已完成（**Linkerd ✅ + Istio ✅** 双网格对比演示：mTLS(STRICT)+黄金指标+流量治理/熔断全部验证，文档见 服务网格/）/ ✅ 24 供应链安全已完成 / ✅ 25 密钥进阶已完成（Vault+ESO 闭环）/ 🔭 **26~31 已规划为后续研究方向（短期内不做，详见 `增强路线26-31规划.md`）**：26 多集群与联邦治理 / 27 事件驱动弹性 KEDA / 28 Gateway API 标准化 / 29 K8s 排障与性能调优 / 30 SLO 工程与告警降噪 / 31 GitOps 进阶与渐进式交付深化 | 主线任务全部完成 ✅
+- ✅ **Falco 运行时安全** — falco DaemonSet（守护进程集） 仅落 worker（master NoSchedule 挡住）；modern_ebpf + 镜像内置容器插件离线富化；`cat /etc/shadow` 触发 Warning 告警含 container/pod/ns 元信息（详见 `运行时安全/Falco/`）✅
+- ✅ **供应链安全（第24项）** — cosign 本地私钥签名镜像 + syft 生成 SBOM；Kyverno verifyImages 策略（`imageReferences=192.168.1.61:5000/*`，keys 公钥验签 + `rekor.ignoreTlog`/`ctlog.ignoreSCT` 跳过透明日志适配离线）实测：签名镜像放行、未签名镜像被拒（`no signatures found`），DevSecOps 第四层（扫描 Trivy（镜像漏洞扫描） + 准入 Kyverno + 运行时 Falco + 供应链验签）闭环成立（详见 `供应链安全/`）✅
+📋 **后续增强路线（云原生能力补全 20~31）** — ✅ 20 可靠性保障已完成 / ✅ 21 Velero 备份容灾已完成 / ✅ 22 Falco 运行时安全已完成 / 🟢 23 服务网格已完成（**Linkerd ✅ + Istio（服务网格） ✅** 双网格对比演示：mTLS(STRICT)+黄金指标+流量治理/熔断全部验证，文档见 服务网格/）/ ✅ 24 供应链安全已完成 / ✅ 25 密钥进阶已完成（Vault+ESO 闭环）/ 🔭 **26~31 已规划为后续研究方向（短期内不做，详见 `增强路线26-31规划.md`）**：26 多集群与联邦治理 / 27 事件驱动弹性 KEDA / 28 Gateway API 标准化 / 29 K8s 排障与性能调优 / 30 SLO 工程与告警降噪 / 31 GitOps 进阶与渐进式交付深化 | 主线任务全部完成 ✅

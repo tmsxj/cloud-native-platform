@@ -1,6 +1,6 @@
 # 配置文件目录
 
-> 本目录存放 Jenkins + ArgoCD GitOps 全链路涉及的所有 YAML、XML 配置和脚本文件。
+> 本目录存放 Jenkins（CI 持续集成工具） + ArgoCD GitOps 全链路涉及的所有 YAML、XML 配置和脚本文件。
 > 每个文件都带有详细的中文注释，可以直接复制使用。
 
 ## 📁 目录结构
@@ -29,8 +29,8 @@
 
 | 项目 | 说明 |
 |------|------|
-| **用途** | 在 K8s 集群中部署内网 Git 服务器 |
-| **组件** | PVC（持久化）+ InitJob（初始化仓库）+ Deployment（双容器）+ Service |
+| **用途** | 在 K8s（Kubernetes，容器编排引擎） 集群中部署内网 Git 服务器 |
+| **组件** | PVC（持久化）+ InitJob（初始化仓库）+ Deployment（双容器）+ Service（服务，集群内服务发现） |
 | **容器** | Nginx (:80, 浏览器查看) + Git Daemon (:9418, git:// 协议) |
 | **关键点** | `--enable=receive-pack` 允许 push；`--base-path=/repos` 简化 clone 路径 |
 | **命名空间** | `git` |
@@ -41,7 +41,7 @@
 | 项目 | 说明 |
 |------|------|
 | **用途** | 在 K8s 集群中部署 Jenkins CI 服务器 |
-| **组件** | PVC + ServiceAccount + ClusterRole/Binding + Deployment + Service + Ingress |
+| **组件** | PVC + ServiceAccount + ClusterRole/Binding + Deployment（部署，无状态工作负载） + Service + Ingress |
 | **关键点** | 挂载宿主机 docker.sock → 容器内直接执行 docker build/push |
 | **权限** | ClusterRole 高权限（可管理 K8s 资源），生产环境建议缩小范围 |
 | **命名空间** | `jenkins` |
@@ -51,10 +51,10 @@
 
 | 项目 | 说明 |
 |------|------|
-| **用途** | Jenkins Pipeline Job 的 XML 配置文件 |
+| **用途** | Jenkins Pipeline（流水线） Job 的 XML 配置文件 |
 | **方式** | Inline Script（CpsFlowDefinition），非 SCM-based Pipeline |
-| **流水线** | 6 个 Stage：Checkout → Build → Push → Update GitOps → Git Push → Wait Sync |
-| **关键点** | 用 sed 替换基础镜像地址解决内网问题；git push 后 ArgoCD 自动同步 |
+| **流水线** | 6 个 Stage：Checkout → Build → Push → Update GitOps（以 Git 为唯一真相源的运维模式） → Git Push → Wait Sync |
+| **关键点** | 用 sed 替换基础镜像地址解决内网问题；git push 后 ArgoCD（GitOps 持续交付工具） 自动同步 |
 | **部署** | 通过 REST API 创建 `curl -X POST /createItem?name=... --data-binary @jenkins-job-config.xml` |
 
 ### 4. repo-secret.yaml
@@ -94,10 +94,10 @@
 
 | 搜索替换 | 默认值 | 说明 |
 |---------|--------|------|
-| `192.168.1.61` | Harbor 镜像仓库地址 | 你的 Harbor IP/域名 |
+| `192.168.1.61` | Harbor（私有镜像仓库） 镜像仓库地址 | 你的 Harbor IP/域名 |
 | `192.168.1.61/library` | 基础镜像前缀 | 你的镜像库路径 |
 | `local-path` | StorageClass 名称 | 你的集群 StorageClass |
-| `nginx` | Ingress Controller 类名 | 你的 Ingress Controller |
+| `nginx` | Ingress（入口规则） Controller 类名 | 你的 Ingress Controller |
 | `jenkins.test` | Jenkins 域名 | 你的 Jenkins 域名或 IP |
 | `argocd.test` | ArgoCD 域名 | 你的 ArgoCD 域名或 IP |
 | `:31716` | Ingress NodePort | 你的 Ingress Controller 端口 |

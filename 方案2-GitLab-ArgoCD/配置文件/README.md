@@ -1,4 +1,4 @@
-# 配置文件目录 - GitLab + ArgoCD 方案
+# 配置文件目录 - GitLab + ArgoCD（GitOps 持续交付工具） 方案
 
 > 所有独立 YAML/XML/Shell/Java 配置，带中文注释，可直接复制使用。
 
@@ -35,10 +35,10 @@
 
 | 搜索 | 替换为 | 说明 |
 |------|--------|------|
-| `192.168.1.61` | 你的 Harbor IP | 镜像仓库地址 |
+| `192.168.1.61` | 你的 Harbor（私有镜像仓库） IP | 镜像仓库地址 |
 | `local-path` | 你的 StorageClass | K8S 存储类 |
-| `gitlab.test:31080` | 你的 GitLab 域名 | GitLab 访问地址 |
-| `YOUR_REGISTRATION_TOKEN` | GitLab Runner Token | 从 GitLab 管理界面获取 |
+| `gitlab.test:31080` | 你的 GitLab（代码托管 + CI 平台） 域名 | GitLab 访问地址 |
+| `YOUR_REGISTRATION_TOKEN` | GitLab Runner（GitLab CI 执行器） Token | 从 GitLab 管理界面获取 |
 | `<HARBOR_PASS>` | 你的 Harbor 密码 | 环境变量自动加载 |
 
 > **推荐**: 修改 `项目实战/部署工具/env.sh` 统一管理所有配置，不再需要逐个文件替换。
@@ -64,7 +64,7 @@
 
 ### 3. GitLab CI Variables 配置
 
-在 GitLab 项目 `Settings → CI/CD → Variables` 中添加：
+在 GitLab 项目 `Settings → CI/CD（持续集成/持续交付） → Variables` 中添加：
 
 | Key | Value | 说明 |
 |-----|-------|------|

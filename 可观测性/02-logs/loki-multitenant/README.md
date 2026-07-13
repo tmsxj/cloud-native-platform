@@ -1,4 +1,4 @@
-# P2b.13 — Loki 多租户
+# P2b.13 — Loki（日志系统） 多租户
 
 > 📅 2026-07-06 完成 | 验证状态: ✅ demo/fake 租户隔离 + Promtail 注入 tenant_id
 
@@ -6,7 +6,7 @@
 
 1. Loki: `auth_enabled: false → true`
 2. Promtail: clients 加 `tenant_id: demo`
-3. Grafana: Loki 数据源加 `X-Scope-OrgID: demo`
+3. Grafana（可视化面板）: Loki 数据源加 `X-Scope-OrgID: demo`
 4. 验证: demo 租户查询有数据，fake 租户查询为空
 
 ## 多租户原理
@@ -59,7 +59,7 @@ kubectl exec -n monitoring loki-0 -- wget -qO- --timeout=3 \
 
 ## 内存开销
 
-多租户不新增 Pod，只在请求路径加租户识别。内存增量 ~50-100MB。
+多租户不新增 Pod（容器组），只在请求路径加租户识别。内存增量 ~50-100MB。
 
 ## 面试要点
 

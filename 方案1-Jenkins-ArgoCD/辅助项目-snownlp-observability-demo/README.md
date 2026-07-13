@@ -1,6 +1,6 @@
 # snownlp-observability-demo
 
-> 基于 Kubernetes 的可观测性完整链路演示项目  
+> 基于 Kubernetes（K8s，容器编排引擎） 的可观测性完整链路演示项目  
 > 情感分析微服务 + 日志采集 + 调用链追踪 + 一键跳转
 
 ---
@@ -69,7 +69,7 @@ loadgen → POST /predict → snownlp-demo (SnowNLP 情感分析)
     → OAP 存储 H2/Elasticsearch → UI 查询 GraphQL
 ```
 
-### 链路④: 日志 traceID → SkyWalking 一键跳转（核心亮点）
+### 链路④: 日志 traceID → SkyWalking（APM 调用链追踪） 一键跳转（核心亮点）
 ```
 Grafana Explore Loki:
   日志行 "trace_id=aa5e61a26efa11f18f1bba87a413a4b2"
@@ -112,9 +112,9 @@ snownlp-observability-demo/
 ## 部署步骤
 
 ### 0. 前提条件
-- Kubernetes 集群 (含 Ingress NGINX Controller)
+- Kubernetes 集群 (含 Ingress（入口规则） NGINX Controller)
 - SkyWalking OAP + UI 已部署
-- Grafana + Loki + Promtail 已部署
+- Grafana（可视化面板） + Loki + Promtail 已部署
 - 本地 `/etc/hosts` 添加:
   ```
   192.168.1.55  grafana.lab.local  skywalking.lab.local  snownlp.lab.local
@@ -140,7 +140,7 @@ kubectl apply -f 02-promtail/promtail-config.yaml
 kubectl rollout restart daemonset/promtail -n monitoring
 ```
 
-### 4. 更新 Loki 配置
+### 4. 更新 Loki（日志系统） 配置
 ```bash
 kubectl apply -f 03-loki/loki-config.yaml
 kubectl rollout restart statefulset/loki -n monitoring

@@ -1,15 +1,15 @@
-# ArgoCD Image Updater 配置说明
+# ArgoCD（GitOps 持续交付工具） Image Updater 配置说明
 
-> 方案2 GitLab-ArgoCD 的 CD 引擎：取代传统 `sed + git push` 部署方式的自动化镜像更新方案
+> 方案2 GitLab（代码托管 + CI 平台）-ArgoCD 的 CD 引擎：取代传统 `sed + git push` 部署方式的自动化镜像更新方案
 
 ---
 
 ## 一、为什么需要 Image Updater？
 
-| 传统方式 (方案1 Jenkins) | Image Updater 方式 (方案2 GitLab) |
+| 传统方式 (方案1 Jenkins（CI 持续集成工具）) | Image Updater 方式 (方案2 GitLab) |
 |---|---|
 | CI 用 `sed` 修改 YAML → `git commit` → `git push` | CI 只管构建+推送镜像 |
-| ArgoCD 检测 Git 变更 → 自动同步 | Image Updater 检测 Harbor 新镜像 → 更新 ArgoCD 参数 → 触发同步 |
+| ArgoCD 检测 Git 变更 → 自动同步 | Image Updater 检测 Harbor（私有镜像仓库） 新镜像 → 更新 ArgoCD 参数 → 触发同步 |
 | Git 仓库有大量 CI 提交噪音 | Git 仓库保持干净 |
 | CI 需要 Git 写权限 | CI 只需要 Harbor 写权限 |
 
@@ -48,7 +48,7 @@
 
 ---
 
-## 三、ConfigMap 配置详解
+## 三、ConfigMap（配置字典） 配置详解
 
 ```yaml
 # argocd-image-updater-config
@@ -99,7 +99,7 @@ metadata:
 **工作原理**：
 1. Image Updater 每 2 分钟轮询 Harbor API: `GET /api/v2.0/projects/tomcat-demo/repositories/tomcat-app/artifacts`
 2. 发现新镜像标签 → 更新 ArgoCD Application 的 `kustomize.images` 参数
-3. ArgoCD 检测到 Application 变更 → 触发自动同步 → K8s 滚动更新
+3. ArgoCD 检测到 Application 变更 → 触发自动同步 → K8s（Kubernetes，容器编排引擎） 滚动更新
 
 ---
 
@@ -121,7 +121,7 @@ metadata:
 └───────────────────────────────┴───────────────────────────┘
 ```
 
-**核心设计理念**：CI 只负责"构建+验证+推送"，CD 完全交给 GitOps 引擎。
+**核心设计理念**：CI 只负责"构建+验证+推送"，CD 完全交给 GitOps（以 Git 为唯一真相源的运维模式） 引擎。
 
 ---
 
@@ -142,9 +142,9 @@ kubectl -n argocd get application tomcat-dev -o jsonpath='{.spec.source.kustomiz
 ```
 
 **当前状态**：
-- Image Updater Pod: ✅ Running (argocd-image-updater-d9ff7bd4-f9jzv)
+- Image Updater Pod（容器组）: ✅ Running (argocd-image-updater-d9ff7bd4-f9jzv)
 - ConfigMap: ✅ Harbor 注册表已配置
-- Secret: ✅ ArgoCD Token 已注入
+- Secret（密钥对象）: ✅ ArgoCD Token 已注入
 - Application: ✅ tomcat-dev 已添加 Image Updater 注解
 - 当前镜像: `192.168.1.61/tomcat-demo/tomcat-app:v58-5ea9925f`
 

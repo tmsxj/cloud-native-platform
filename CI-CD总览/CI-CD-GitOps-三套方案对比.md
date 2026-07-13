@@ -1,6 +1,6 @@
-# CI/CD 三套方案对比实现
+# CI/CD（持续集成/持续交付） 三套方案对比实现
 
-> 基于当前自建 K8s 集群（Harbor + ArgoCD + Jenkins）的真实环境
+> 基于当前自建 K8s 集群（Harbor + ArgoCD + Jenkins（CI 持续集成工具））的真实环境
 > 假设项目：HiAgent 智能体平台（多组件、多环境）
 
 ---
@@ -60,7 +60,7 @@ images:
 
 ---
 
-## 方案1: Jenkins + ArgoCD 联动
+## 方案1: Jenkins + ArgoCD（GitOps 持续交付工具） 联动
 
 ### 架构
 
@@ -72,8 +72,8 @@ Git Push → Jenkins Pipeline → Harbor(存镜像) → Git(更新tag) → ArgoC
 
 - Jenkins 已部署 ✅ (`http://jenkins.test:31716`)
 - ArgoCD 已部署 ✅ (`http://argocd.test:31716`)
-- Harbor 已部署 ✅ (`192.168.1.61`)
-- Git 仓库：存放 K8s manifests
+- Harbor（私有镜像仓库） 已部署 ✅ (`192.168.1.61`)
+- Git 仓库：存放 K8s（Kubernetes，容器编排引擎） manifests
 
 ### Step 1: 创建 ArgoCD Application
 
@@ -206,7 +206,7 @@ pipeline {
 
 ---
 
-## 方案2: GitLab CI + ArgoCD 联动
+## 方案2: GitLab（代码托管 + CI 平台） CI + ArgoCD 联动
 
 ### 架构
 
@@ -304,7 +304,7 @@ update-manifest:
 ## 方案3: 纯 GitOps（无 CI 工具模式）
 
 > ⚠️ **注意**：此处的"方案3"指的是 **无 CI 工具的部署模式**（开发者手动构建镜像 + ArgoCD 自动同步）。
-> 项目中 `方案3-Argo-Rollouts/` 目录在此基础上增加了 **Argo Rollouts 灰度发布**（金丝雀 + 蓝绿），
+> 项目中 `方案3-Argo-Rollouts/` 目录在此基础上增加了 **Argo Rollouts（渐进式发布控制器） 灰度发布**（金丝雀 + 蓝绿），
 > 属于高级发布策略扩展，详见 [方案3 README](./方案3-Argo-Rollouts/README.md)。
 
 ### 架构
@@ -317,7 +317,7 @@ update-manifest:
 
 - **无 CI 工具**：不依赖 Jenkins / GitLab CI / GitHub Actions
 - **Git 是唯一真相源**：一切变更通过 Git commit 驱动
-- **最简单**：没有 Pipeline 维护成本
+- **最简单**：没有 Pipeline（流水线） 维护成本
 - **适合场景**：小团队、配置型变更为主、镜像变更少
 
 ### Step 1: ArgoCD Application（同上）
@@ -407,20 +407,20 @@ echo "✅ 已发布 hiagent-${SERVICE}:${VERSION} → ArgoCD 将自动同步"
 
 ## 三套方案对比总结
 
-| 对比维度 | Jenkins + ArgoCD | GitLab CI + ArgoCD | 无 CI（纯 GitOps） |
+| 对比维度 | Jenkins + ArgoCD | GitLab CI + ArgoCD | 无 CI（纯 GitOps（以 Git 为唯一真相源的运维模式）） |
 |---------|-----------------|--------------------|-----------|
 | **CI 工具** | Jenkins（自建） | GitLab CI（Runner） | 无 |
 | **CD 工具** | ArgoCD | ArgoCD | ArgoCD |
-| **触发方式** | 手动/定时/Webhook | Git Push 自动 | 手动 git push |
+| **触发方式** | 手动/定时/Webhook（准入/回调钩子） | Git Push 自动 | 手动 git push |
 | **构建步骤** | Jenkinsfile 定义 | .gitlab-ci.yml 定义 | 开发者手动/脚本 |
 | **复杂度** | ⭐⭐⭐ 中等 | ⭐⭐ 较低 | ⭐ 最低 |
 | **适用场景** | 大型企业（已有 Jenkins） | GitLab 用户 | 小型项目/配置型变更 |
-| **上手成本** | 需要配 Pipeline | GitLab Runner 即可 | 只需 ArgoCD |
+| **上手成本** | 需要配 Pipeline | GitLab Runner（GitLab CI 执行器） 即可 | 只需 ArgoCD |
 | **灵活性** | 最高（Groovy 可编程） | 高（YAML + 自定义） | 低（只有 Git push） |
 | **维护成本** | 高（Jenkins 运维） | 中（Runner 管理） | 低（无额外组件） |
 | **当前环境就绪度** | ✅ Jenkins 已部署 | ⚠️ 需部署 Runner | ✅ ArgoCD 已部署 |
 
-> 💡 **扩展阅读**：项目中的 `方案3-Argo-Rollouts/` 目录在"无 CI 模式"基础上增加了 **Argo Rollouts 高级发布策略**（金丝雀 + 蓝绿发布），将普通的 Deployment 替换为 Rollout 资源，适合需要精细控制发布节奏的场景。
+> 💡 **扩展阅读**：项目中的 `方案3-Argo-Rollouts/` 目录在"无 CI 模式"基础上增加了 **Argo Rollouts 高级发布策略**（金丝雀 + 蓝绿发布），将普通的 Deployment（部署，无状态工作负载） 替换为 Rollout 资源，适合需要精细控制发布节奏的场景。
 
 ---
 

@@ -1,10 +1,10 @@
 # 可观测性总览与运维手册
 
 > 项目沉淀 **两套可观测性方案**，manifest 均保留在仓库，可独立部署 / 对照学习：
-> - **方案 A（初版 · 经典三件套）**：Prometheus + Loki + SkyWalking + Elasticsearch
-> - **方案 B（演进版 · LGTM + OTel）**：Prometheus + Loki + Grafana + Tempo + OTel Collector + MinIO(S3)
+> - **方案 A（初版 · 经典三件套）**：Prometheus（指标监控系统） + Loki + SkyWalking + Elasticsearch
+> - **方案 B（演进版 · LGTM + OTel）**：Prometheus + Loki + Grafana（可视化面板） + Tempo + OTel Collector + MinIO(S3)
 >
-> 当前集群实际运行 **方案 B**（方案 A 的 SkyWalking / ES 为省资源已卸载，但 manifest 仍在，可随时切回）。
+> 当前集群实际运行 **方案 B**（方案 A 的 SkyWalking（APM 调用链追踪） / ES 为省资源已卸载，但 manifest 仍在，可随时切回）。
 
 ## 概述
 
@@ -16,9 +16,9 @@
 |------|------|------|
 | **M**etrics | Prometheus + AlertManager + Grafana + node-exporter + kube-state-metrics + Pushgateway | 同（不变） |
 | **L**ogs | Loki（filesystem 本地 PVC）+ Promtail | Loki（MinIO S3, bucket=`loki`）+ Promtail |
-| **T**races | SkyWalking OAP/UI + Java Agent 注入 | OpenTelemetry Collector + Tempo（MinIO S3, bucket=`tempo`） |
-| 对象存储 | 无（ES 用 local-path PVC，见 `04-es-storage/`） | MinIO/S3（Tempo 与 Loki 共用，见 `05-otel/`） |
-| trace ↔ log 关联 | Grafana `derivedFields → SkyWalking` | Grafana `trace_id` 关联 Tempo + Loki |
+| **T**races | SkyWalking OAP/UI + Java Agent 注入 | OpenTelemetry（OTel，可观测性数据采集标准） Collector + Tempo（MinIO S3, bucket=`tempo`） |
+| 对象存储 | 无（ES 用 local-path PVC，见 `04-es-storage/`） | MinIO/S3（Tempo 与 Loki（日志系统） 共用，见 `05-otel/`） |
+| trace ↔ log 关联 | Grafana `derivedFields → SkyWalking` | Grafana `trace_id` 关联 Tempo（链路追踪后端） + Loki |
 | 埋点方式 | SkyWalking Java Agent（`-javaagent`） | OTLP（应用直出 / 边车） |
 | 适用场景 | 传统开箱即用的成熟 APM | 云原生标准栈、统一 OTLP、S3 化降本 |
 
@@ -26,7 +26,7 @@
 
 **存储双栈**（详见下文「存储架构」）：文件存储走 **NFS**（Grafana/Prometheus 等 PVC），对象存储走 **MinIO/S3**（方案 B 的 Tempo/Loki chunk）。方案 A 的 Elasticsearch 走 local-path PVC，不占 NFS。
 
-**两阶段策略**：监控跑通 → 保存配置 → 删 Pod 腾资源 → 部署 CI/CD + 中间件 → 按需恢复监控。
+**两阶段策略**：监控跑通 → 保存配置 → 删 Pod 腾资源 → 部署 CI/CD（持续集成/持续交付） + 中间件 → 按需恢复监控。
 
 ## 目录结构
 
@@ -69,17 +69,17 @@
 
 | Job | 目标 |
 |-----|------|
-| kubernetes-api-servers | K8s API Server |
+| kubernetes-api-servers | K8s（Kubernetes，容器编排引擎） API Server |
 | kubernetes-nodes | 节点指标 |
 | kubernetes-nodes-cadvisor | 容器指标 (cAdvisor) |
-| kubernetes-pods | 带 `prometheus.io/scrape` 注解的 Pod |
+| kubernetes-pods | 带 `prometheus.io/scrape` 注解的 Pod（容器组） |
 | kubernetes-pods-slow | 低频抓取 |
-| kubernetes-service-endpoints | Service 端点 |
+| kubernetes-service-endpoints | Service（服务，集群内服务发现） 端点 |
 | kubernetes-service-endpoints-slow | 低频抓取 |
 | kubernetes-services | Blackbox 探测 |
 | prometheus | Prometheus 自身 |
 | prometheus-pushgateway | Pushgateway |
-| harbor | Harbor 节点 (192.168.1.61:9090) |
+| harbor | Harbor（私有镜像仓库） 节点 (192.168.1.61:9090) |
 
 ### 告警规则（15 条，8 组）
 
@@ -105,17 +105,17 @@
 | 类型 | 数量 | 说明 |
 |------|------|------|
 | 数据源 | 3 | Prometheus（默认）+ Loki（logs）+ Tempo（traces，trace_id 关联） |
-| Dashboard | 11 | K8s 全套 + Node Exporter + Harbor + 日志-Trace 联动 |
+| Dashboard | 11 | K8s 全套 + Node（节点） Exporter + Harbor + 日志-Trace 联动 |
 
 ### 部署组件（按三支柱 + 存储分组）
 
 #### 📊 Metrics（指标）
 | 组件 | 类型 | 说明 |
 |------|------|------|
-| prometheus-server | Deployment | Prometheus v3.11.3 |
-| alertmanager | StatefulSet | AlertManager v0.25.0 |
+| prometheus-server | Deployment（部署，无状态工作负载） | Prometheus v3.11.3 |
+| alertmanager | StatefulSet（有状态工作负载） | AlertManager v0.25.0 |
 | grafana | Deployment | Grafana 12.3.1 |
-| node-exporter | DaemonSet ×5 | 主机指标 |
+| node-exporter | DaemonSet（守护进程集） ×5 | 主机指标 |
 | kube-state-metrics | Deployment | K8s 对象指标 |
 | prometheus-pushgateway | Deployment | 短任务指标 |
 
@@ -309,26 +309,26 @@ kubectl scale deployment otel-collector -n $ns --replicas=1
 
 | 维度 | 本项目（演示级） | 企业生产标准 |
 |------|------|------|
-| 高可用 | Prometheus / Grafana / Loki / Tempo / MinIO 全为**单副本** | 核心组件多副本或 HA（Prometheus 配 Sidecar + Thanos；Grafana ≥2 副本） |
+| 高可用 | Prometheus / Grafana / Loki / Tempo / MinIO 全为**单副本** | 核心组件多副本或 HA（Prometheus 配 Sidecar（边车代理） + Thanos；Grafana ≥2 副本） |
 | 指标长期存储 | Prometheus 7d 保留、本地 NFS TSDB | 接 Thanos / Mimir / Cortex，长期存储 + 降采样，保留数月~年 |
 | 对象存储 | MinIO 单副本、无纠删码 / TLS、access key 明文在 CM | 多盘纠删码或直接使用云厂商 S3（S3/GCS），启用 TLS + key 轮换 |
 | 日志生命周期 | MinIO bucket 无过期策略 | 对象存储配 lifecycle 规则（热/冷分层 + 自动过期） |
 | 告警落地 | webhook 指向 `webhook-dummy` | 真实接飞书 / 企微 / 电话，配静默、值班路由（on-call） |
-| 安全 | Grafana 默认 admin、MinIO key 在 ConfigMap | SSO/LDAP、Secret 管理（Vault / External Secrets）、NetworkPolicy 隔离 |
+| 安全 | Grafana 默认 admin、MinIO key 在 ConfigMap（配置字典） | SSO/LDAP、Secret 管理（Vault / External Secrets）、NetworkPolicy 隔离 |
 | SLO / SLI | 仅资源级告警 | 业务 SLO + 错误预算燃烧率告警（Multiwindow Burn-Rate） |
 | Trace 采样 | OTel Collector 无显式采样 | tail-based sampling 防 trace 爆炸，关键链路全采、低频链路抽样 |
-| 备份 / DR | 仅 `scripts/save` 导出 yaml | PV 快照 + GitOps 配置即代码 + 定期恢复演练 |
-| 端点暴露 | 可观测性端点未走 Ingress/TLS | Grafana / 端点经 Ingress + TLS，最小化对外暴露 |
+| 备份 / DR | 仅 `scripts/save` 导出 yaml | PV 快照 + GitOps（以 Git 为唯一真相源的运维模式） 配置即代码 + 定期恢复演练 |
+| 端点暴露 | 可观测性端点未走 Ingress（入口规则）/TLS | Grafana / 端点经 Ingress + TLS，最小化对外暴露 |
 
 ### 生产环境下标准做法（按组件）
 
-- **Metrics**：Prometheus Operator 托管；Thanos Sidecar + 对象存储做全局视图与长期保留；Recording Rule 预聚合降负载；多副本 AlertManager。
+- **Metrics**：Prometheus Operator（操作符，自动化运维控制器） 托管；Thanos Sidecar + 对象存储做全局视图与长期保留；Recording Rule 预聚合降负载；多副本 AlertManager。
 - **Logs**：Loki 生产直接用云 S3（或 MinIO 纠删码集群）；`compactor` 与 `index` 分离；按 namespace/租户设 retention；日志告警接 AlertManager。
-- **Traces**：Tempo 后端接云 S3；OTel Collector 部署为 **Gateway + Agent 两层**，Gateway 做 tail-based sampling 与批处理；高吞吐时 Collector 水平扩容。
+- **Traces**：Tempo 后端接云 S3；OTel Collector 部署为 **Gateway（网关实例） + Agent 两层**，Gateway 做 tail-based sampling 与批处理；高吞吐时 Collector 水平扩容。
 - **可视化**：Grafana 多副本 + 数据库外置（PostgreSQL）；接入 SSO；DataSource/ Dashboard 用 Terraform 或 GitOps 管理。
 - **告警**：AlertManager 接真实 IM（飞书/企微）与 on-call（如 PagerDuty）；基于 SLO 的燃烧率告警；重要告警电话兜底。
-- **安全**：所有 Secret 走 External Secrets Operator 从 Vault/云密钥管理同步；Grafana/MinIO 启用 TLS；NetworkPolicy 限制组件间访问。
-- **可靠性**：核心组件配 PDB（PodDisruptionBudget）+ 反亲和；PV 用快照备份；用 ArgoCD 做 GitOps 持续同步。
+- **安全**：所有 Secret 走 External Secrets Operator（外部密钥操作符，ESO） 从 Vault/云密钥管理同步；Grafana/MinIO 启用 TLS；NetworkPolicy 限制组件间访问。
+- **可靠性**：核心组件配 PDB（PodDisruptionBudget）+ 反亲和；PV 用快照备份；用 ArgoCD（GitOps 持续交付工具） 做 GitOps 持续同步。
 
 ### 演进路线（优先级建议）
 
@@ -336,7 +336,7 @@ kubectl scale deployment otel-collector -n $ns --replicas=1
 2. **对象存储加固** —— MinIO 纠删码 / 换云 S3 + 日志 lifecycle 过期，消除单点丢数据风险
 3. **指标长期存储** —— Prometheus 接 Thanos/Mimir，解决 7d 保留太短
 4. **关键组件 HA** —— Grafana / AlertManager / Collector 多副本 + PDB
-5. **安全加固** —— Grafana SSO + Secret 管理 + NetworkPolicy
+5. **安全加固** —— Grafana SSO + Secret（密钥对象） 管理 + NetworkPolicy
 6. **SLO 体系** —— 从资源告警升级到业务 SLO 燃烧率告警
 
 > 以上为**演进 checklist**，可按实际资源逐步补齐；本项目作为基础架构已具备正确的选型与清晰的扩展路径。

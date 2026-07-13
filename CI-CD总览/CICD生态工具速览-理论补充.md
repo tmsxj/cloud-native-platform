@@ -1,6 +1,6 @@
-# CI/CD 生态工具速览（理论补充）
+# CI/CD（持续集成/持续交付） 生态工具速览（理论补充）
 
-> 基于已落地的三套方案（Jenkins / GitLab CI / ArgoCD Rollouts），补充你可能没实际用过但面试会提到的工具。
+> 基于已落地的三套方案（Jenkins / GitLab CI / ArgoCD（GitOps 持续交付工具） Rollouts），补充你可能没实际用过但面试会提到的工具。
 
 ---
 
@@ -8,13 +8,13 @@
 
 | 工具 | 在你方案中的作用 |
 |------|----------------|
-| Jenkins | CI 引擎（方案1） |
-| GitLab CI | SCM 集成的 CI 引擎（方案2） |
-| ArgoCD | GitOps CD，自动同步 Git→K8s（三方案共用） |
-| Argo Rollouts | 金丝雀 + 蓝绿发布策略（方案3） |
-| Kustomize | 多环境配置管理（base + overlays） |
-| Harbor | 私有 Docker 镜像仓库 |
-| Prometheus + Grafana + Loki | 可观测性三件套 |
+| Jenkins（CI 持续集成工具） | CI 引擎（方案1） |
+| GitLab（代码托管 + CI 平台） CI | SCM 集成的 CI 引擎（方案2） |
+| ArgoCD | GitOps（以 Git 为唯一真相源的运维模式） CD，自动同步 Git→K8s（三方案共用） |
+| Argo Rollouts（渐进式发布控制器） | 金丝雀 + 蓝绿发布策略（方案3） |
+| Kustomize（K8s 清单定制工具） | 多环境配置管理（base + overlays） |
+| Harbor（私有镜像仓库） | 私有 Docker 镜像仓库 |
+| Prometheus（指标监控系统） + Grafana + Loki | 可观测性三件套 |
 
 ---
 
@@ -42,13 +42,13 @@ Argo Workflows → K8s 原生任务编排（你没用到）
 Argo Events    → 事件驱动触发 Workflows
 ```
 
-**它干什么的**：跑一次性任务，比如"每天凌晨2点清理旧镜像"、"部署前跑一套 E2E 测试"。Jenkins 也能干这事，但 Argo Workflows 每个步骤跑在一个独立 Pod 里，隔离性更好。
+**它干什么的**：跑一次性任务，比如"每天凌晨2点清理旧镜像"、"部署前跑一套 E2E 测试"。Jenkins 也能干这事，但 Argo Workflows 每个步骤跑在一个独立 Pod（容器组） 里，隔离性更好。
 
-**面试说法**："我们 CI 阶段用 Jenkins/GitLab CI 做构建，如果有复杂的批量任务会考虑 Argo Workflows，但目前 Jenkins Pipeline 能满足需求。"
+**面试说法**："我们 CI 阶段用 Jenkins/GitLab CI 做构建，如果有复杂的批量任务会考虑 Argo Workflows，但目前 Jenkins Pipeline（流水线） 能满足需求。"
 
 ### 2.3 Argo Events
 
-依赖外部事件触发 Workflows 或 Pipeline。比如："GitHub Webhook → Argo Events → Argo Workflows → 跑测试"。如果已经有 Jenkins 或 GitLab CI，这个不是必需品。
+依赖外部事件触发 Workflows 或 Pipeline。比如："GitHub Webhook（准入/回调钩子） → Argo Events → Argo Workflows → 跑测试"。如果已经有 Jenkins 或 GitLab CI，这个不是必需品。
 
 ---
 
@@ -61,7 +61,7 @@ Argo Events    → 事件驱动触发 Workflows
 | | ArgoCD | Flux CD |
 |---|--------|---------|
 | 理念 | Pull 模式，有 UI 面板 | Pull 模式，更偏 CLI |
-| 配置 | Application CRD | GitRepository + Kustomization CRD |
+| 配置 | Application CRD（自定义资源定义） | GitRepository + Kustomization CRD |
 | 多租户 | AppProject | 命名空间隔离 |
 | 镜像自动更新 | Image Updater 插件 | 内置 ImageRepository API |
 | 学习曲线 | ⭐⭐⭐ | ⭐⭐⭐⭐ |
@@ -92,7 +92,7 @@ GitHub Actions 最大的特点是 **Marketplace 生态**，比如 `docker/build-
 
 ### 4.2 Tekton
 
-**Kubernetes 原生的 CI 框架，被称作"CI 界的 Argo Workflows"。**
+**Kubernetes（K8s，容器编排引擎） 原生的 CI 框架，被称作"CI 界的 Argo Workflows"。**
 
 每个 CI 步骤（拉代码、构建、测试、推送）都跑在一个独立 Pod 里，跟 ArgoCD 天然兼容。
 
@@ -117,7 +117,7 @@ Buildpacks → 连 Dockerfile 都不用写，自动检测语言堆栈构建
 
 ### 5.1 镜像漏洞扫描
 
-**Harbor 已内置 Trivy 扫描，你的环境里配置过离线扫描 ✅**
+**Harbor 已内置 Trivy（镜像漏洞扫描） 扫描，你的环境里配置过离线扫描 ✅**
 
 ```
 你现有的链路:
@@ -134,9 +134,9 @@ Harbor 扫描 v.s. Pipeline 扫描的唯一区别：
 
 **面试说法**："镜像安全通过 Harbor 离线 Trivy 扫描 + CVE 阻断策略实现，高危漏洞镜像直接禁止拉取。Pipeline 侧不需要重复扫描。"
 
-### 5.2 Sealed Secrets / External Secrets / Vault
+### 5.2 Sealed Secrets / External Secrets / Vault（密钥管理系统）
 
-**你目前：K8s 原生 Secret（base64），内网环境。**
+**你目前：K8s（Kubernetes，容器编排引擎） 原生 Secret（base64），内网环境。**
 
 这道题的进化路径：
 
@@ -152,11 +152,11 @@ Level 4: HashiCorp Vault — 完整密钥生命周期管理平台
 - Sealed Secrets 纯 K8s 内闭环：加密用集群公钥 → 提交 Git → ArgoCD 同步 → 控制器自动解密
 - 完全免费，不需要外部依赖
 
-**云厂商方案用在哪**：公有云 K8s（EKS/AKS/TKE）+ AWS Secrets Manager / 腾讯云 SSM + External Secrets Operator。适合生产环境需要审计、轮转密钥的场景，但对内网自建集群性价比不高。
+**云厂商方案用在哪**：公有云 K8s（EKS/AKS/TKE）+ AWS Secrets Manager / 腾讯云 SSM + External Secrets Operator（外部密钥操作符，ESO）。适合生产环境需要审计、轮转密钥的场景，但对内网自建集群性价比不高。
 
-**面试说法**："内网集群用 K8s 原生 Secret，配合 ArgoCD 管理。如果 Git 仓库需要外传或合规要求，会引入 Sealed Secrets 实现加密提交，不依赖外部云服务。"
+**面试说法**："内网集群用 K8s 原生 Secret（密钥对象），配合 ArgoCD 管理。如果 Git 仓库需要外传或合规要求，会引入 Sealed Secrets 实现加密提交，不依赖外部云服务。"
 
-### 5.3 OPA / Kyverno — 策略即代码
+### 5.3 OPA / Kyverno（策略即代码引擎） — 策略即代码
 
 **防止有人手贱 `kubectl delete namespace production`。**
 
@@ -165,17 +165,17 @@ OPA Gatekeeper → 通用策略引擎，Rego 语言
 Kyverno        → K8s 原生策略，YAML 写规则
 ```
 
-这是运维进阶话题，大多数场景 ArgoCD 的 `selfHeal: true` + RBAC 就够了。面试提到算加分项。
+这是运维进阶话题，大多数场景 ArgoCD 的 `selfHeal: true` + RBAC（基于角色的访问控制） 就够了。面试提到算加分项。
 
 ---
 
 ## 六、服务网格（跟方案3的金丝雀有交集）
 
-### 6.1 Istio / Linkerd
+### 6.1 Istio / Linkerd（服务网格）
 
-**你的方案3 用 Argo Rollouts 实现金丝雀，流量切换是通过修改 Pod 标签 + Service Selector（第4层）。**
+**你的方案3 用 Argo Rollouts 实现金丝雀，流量切换是通过修改 Pod 标签 + Service（服务，集群内服务发现） Selector（第4层）。**
 
-Istio 可以做到更细粒度——**第7层（HTTP header 级别）金丝雀**：
+Istio（服务网格） 可以做到更细粒度——**第7层（HTTP header 级别）金丝雀**：
 
 ```
 Argo Rollouts (你用的):
@@ -185,7 +185,7 @@ Istio + Flagger:
   "User-Agent 包含 'mobile' 的请求全去新版" → 靠 Envoy 代理层实现
 ```
 
-**面试说法**："当前用 Argo Rollouts 实现 Pod 级别的金丝雀和蓝绿发布，足以满足需求。如果需要 HTTP header 级别的流量切分，会引入 Istio + Flagger，但代价是每个 Pod 多一个 Envoy sidecar，增加运维开销。"
+**面试说法**："当前用 Argo Rollouts 实现 Pod 级别的金丝雀和蓝绿发布，足以满足需求。如果需要 HTTP header 级别的流量切分，会引入 Istio + Flagger，但代价是每个 Pod 多一个 Envoy（数据面代理） sidecar，增加运维开销。"
 
 ---
 
@@ -193,7 +193,7 @@ Istio + Flagger:
 
 | 面试问题 | 一句话回答 |
 |----------|-----------|
-| Helm 用过吗？ | 基础设施组件用 Helm，自己代码用 Kustomize overlays |
+| Helm（K8s 包管理器） 用过吗？ | 基础设施组件用 Helm，自己代码用 Kustomize overlays |
 | ArgoCD 和 Flux 怎么选？ | ArgoCD 有 Web UI，团队可视化协作更好 |
 | 镜像安全怎么做的？ | Harbor 离线 Trivy 扫描 + CVE 阻断策略，高危镜像禁止拉取 |
 | 金丝雀怎么实现的？ | Argo Rollouts，DEV 用金丝雀 20%→100%，STAGING/PROD 用蓝绿 |

@@ -1,4 +1,4 @@
-# P1.9 — Harbor 自动清理策略
+# P1.9 — Harbor（私有镜像仓库） 自动清理策略
 
 > 📅 2026-07-06 完成 | 验证状态: ✅ Retention Policy + GC Schedule 已配置
 
@@ -49,5 +49,5 @@ curl -X PUT "http://harbor.lab.local/api/v2.0/system/gc/schedule" \
 
 1. **Retention vs GC**: Retention 只标记/标记删除，GC 实际释放磁盘空间，两者需配合
 2. **Harbor GC 原理**: 标记 → 清理 → 释放 layer（引用计数为零的 blob）
-3. **为什么需要策略**: 监控组件镜像频繁更新（Promtail/Node Exporter），不清理会撑满 Harbor 磁盘
+3. **为什么需要策略**: 监控组件镜像频繁更新（Promtail/Node（节点） Exporter），不清理会撑满 Harbor 磁盘
 4. **生产建议**: 开发环境保留 5-10 tag，生产保留 20-30 tag，按项目粒度配置

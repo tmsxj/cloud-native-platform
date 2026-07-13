@@ -1,13 +1,13 @@
-# Istio 服务网格部署（离线 / Harbor 镜像）
+# Istio 服务网格部署（离线 / Harbor（私有镜像仓库） 镜像）
 
-> 版本：Istio **1.30.2**（profile=default，控制面 istiod + ingress-gateway）
+> 版本：Istio（服务网格） **1.30.2**（profile=default，控制面 istiod + ingress-gateway）
 > 集群：kubeadm v1.28.15（5 节点，聚焦模式，master 内存红线 → 控制面只落 worker）
 > 镜像源：`docker.io/istio/*` → 经 `外网资源同步/sync_from_us.ps1` 入 Harbor `192.168.1.61/istio/*`
-> 验证结论：`istiod` + `istio-ingressgateway` Running；demo 注入 2/2；STRICT mTLS 生效；L7 黄金指标可采；熔断/重试/超时策略就绪。
+> 验证结论：`istiod` + `istio-ingressgateway` Running；demo 注入 2/2；STRICT mTLS（双向 TLS） 生效；L7 黄金指标可采；熔断/重试/超时策略就绪。
 
 ## 1. 为什么选 profile=default + 1.30.2
 
-- `default` profile 仅装 `istiod`（控制面）+ `istio-ingressgateway`（入口网关），不含 Kiali/Grafana/Prometheus 等 addon，最省资源，契合聚焦模式。
+- `default` profile 仅装 `istiod`（控制面）+ `istio-ingressgateway`（入口网关），不含 Kiali/Grafana/Prometheus（指标监控系统） 等 addon，最省资源，契合聚焦模式。
 - 1.30.2 是当前稳定版，兼容 k8s 1.28；`istioctl manifest generate` 渲染出纯 YAML，便于离线 apply 与镜像改写。
 
 ## 2. 离线镜像清单（需同步进 Harbor）
@@ -50,8 +50,8 @@ ssh m1 "echo '123' | sudo -S bash -c 'export KUBECONFIG=/etc/kubernetes/admin.co
   kubectl apply -f /tmp/istio-final.yaml'"
 ```
 
-> 控制面 Deployment `istiod` / `istio-ingressgateway` 默认无 master taint 的 toleration，天然只调度到 worker，护住 master 内存红线。
-> 早期有 `FailedMount` 瞬时抖动（secret cache 同步超时），已自愈，Pod 正常 Running。
+> 控制面 Deployment（部署，无状态工作负载） `istiod` / `istio-ingressgateway` 默认无 master taint 的 toleration，天然只调度到 worker，护住 master 内存红线。
+> 早期有 `FailedMount` 瞬时抖动（secret cache 同步超时），已自愈，Pod（容器组） 正常 Running。
 
 ## 4. 验证：控制面
 
@@ -65,7 +65,7 @@ kubectl describe pod -n istio-system -l app=istiod
 # Pulling image "192.168.1.61/istio/pilot:1.30.2"  →  Successfully pulled ... in 3.997s
 ```
 
-## 5. 验证：demo（同构于 Linkerd demo，便于双网格对比）
+## 5. 验证：demo（同构于 Linkerd（服务网格） demo，便于双网格对比）
 
 `istio-demo.yaml`（命名空间 `istio-injection: enabled`）+ `istio-policy.yaml`（mTLS + 流量治理）：
 
@@ -88,7 +88,7 @@ kubectl get peerauthentication -n istio-demo
 # default  STRICT   7s
 ```
 
-- **正向**：网格内 client 经 Envoy 访问 backend 正常（`istio_requests_total` 计数全 200）。
+- **正向**：网格内 client 经 Envoy（数据面代理） 访问 backend 正常（`istio_requests_total` 计数全 200）。
 - **反向（强证）**：用一个**非网格** Pod 明文直连 backend PodIP:80 被拒：
 
 ```
@@ -143,6 +143,6 @@ outbound|80||nginx-backend.istio-demo.svc.cluster.local::outlier::success_rate_e
 | 黄金指标 | `istio_requests_total` + 延迟/字节分位；需 Prometheus/Kiali 聚合（本部署未装 addon，原始计数器已可采） |
 | 观测 UI | 默认无；需额外装 Kiali/Grafana（聚焦模式暂略，离线镜像较多） |
 | 资源占用 | 较重（Envoy 用 C++，~50-100MB/sidecar + istiod 控制面），但控制面仅落 worker 可控 |
-| 流量治理 | 强：VirtualService 重试/超时/熔断、DestinationRule 连接池/离群检测、Gateway、流量切分 |
+| 流量治理 | 强：VirtualService 重试/超时/熔断、DestinationRule 连接池/离群检测、Gateway（网关实例）、流量切分 |
 | 熔断/限流 | 原生支持（outlierDetection + connectionPool），Linkerd 无 |
 | 入口网关 | 自带 istio-ingressgateway，Linkerd 需配合第三方 ingress |

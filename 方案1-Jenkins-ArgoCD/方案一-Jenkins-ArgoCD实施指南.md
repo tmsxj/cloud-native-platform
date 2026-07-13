@@ -1,6 +1,6 @@
-# 方案一: Jenkins + ArgoCD GitOps 联动实施指南
+# 方案一: Jenkins（CI 持续集成工具） + ArgoCD GitOps 联动实施指南
 
-> 适用场景: Jenkins 负责 CI (构建+测试+推送镜像), ArgoCD 负责 CD (GitOps 自动同步)
+> 适用场景: Jenkins 负责 CI (构建+测试+推送镜像), ArgoCD（GitOps 持续交付工具） 负责 CD (GitOps 自动同步)
 
 ---
 
@@ -47,7 +47,7 @@
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-**核心思想**: CI 不直接操作 K8s (`kubectl apply`)，而是**修改 Git 中的清单文件**，让 ArgoCD 自动检测并同步。Git = 唯一真相源。
+**核心思想**: CI 不直接操作 K8s（Kubernetes，容器编排引擎） (`kubectl apply`)，而是**修改 Git 中的清单文件**，让 ArgoCD 自动检测并同步。Git = 唯一真相源。
 
 ---
 
@@ -57,7 +57,7 @@
 |------|------|------|
 | **Jenkins** | `http://jenkins.test:31716` | 无登录 (Unsecured) |
 | **ArgoCD** | `http://argocd.test:31716` | `admin` / `wRRzfFrgasxcpwwq` |
-| **Harbor** | `192.168.1.61` | harbor-regcred (K8s Secret) |
+| **Harbor（私有镜像仓库）** | `192.168.1.61` | harbor-regcred (K8s Secret) |
 | **Git 仓库** | `https://your-git-server/snownlp-observability-demo.git` | ⚠️ 部署时填写实际地址 |
 
 ---
@@ -107,7 +107,7 @@ docker login 192.168.1.61 -u admin -p Harbor12345
 ### 3.5 安装 Jenkins 插件
 
 Manage Jenkins → Plugins → Available plugins:
-- `Docker Pipeline` — 在 Pipeline 中使用 docker 命令
+- `Docker Pipeline（流水线）` — 在 Pipeline 中使用 docker 命令
 - `Pipeline: Stage View` — 可视化 Stage 执行状态
 - `Git` — Git 集成
 
@@ -165,7 +165,7 @@ argocd app create snownlp-demo \
    [Wait ArgoCD Sync]    → ArgoCD 检测到变化并同步到 K8s
    ```
 
-### Step 4: 配置自动触发 (Webhook)
+### Step 4: 配置自动触发 (Webhook（准入/回调钩子）)
 
 **在 Jenkins 上:**
 ```
@@ -206,8 +206,8 @@ git add . && git commit -m "test: trigger pipeline" && git push
 | `Jenkinsfile` | snownlp-observability-demo/ | CI 流水线定义 (6 Stage) |
 | `argocd/snownlp-demo-app.yaml` | snownlp-observability-demo/argocd/ | ArgoCD 应用定义 |
 | `argocd/application.yaml` | 可观测性/argocd/ | 监控基础设施的 ArgoCD 应用 |
-| `01-app/deployment.yaml` | snownlp-observability-demo/01-app/ | K8s Deployment (image 标签由 Jenkins 更新) |
-| `01-app/service.yaml` | snownlp-observability-demo/01-app/ | K8s Service (静态不变) |
+| `01-app/deployment.yaml` | snownlp-observability-demo/01-app/ | K8s Deployment（部署，无状态工作负载） (image 标签由 Jenkins 更新) |
+| `01-app/service.yaml` | snownlp-observability-demo/01-app/ | K8s Service（服务，集群内服务发现） (静态不变) |
 
 ---
 
@@ -269,18 +269,18 @@ curl -s http://argocd.test:31716/api/v1/applications/snownlp-demo \
 | ArgoCD 不自动同步 | 轮询周期太长 / 配置错误 | 检查 `syncPolicy.automated`；ArgoCD → Settings → 调短 reconciliation timeout |
 | ArgoCD OutOfSync | deployment.yaml 未 commit | 确认 Stage 5 执行了 `git push` |
 | Git push 失败 | 未配置 Git user.email | Jenkinsfile 中已配置 `jenkins@cicd.local` |
-| Pod CrashLoopBackOff | SkyWalking OAP 不可达 | 确认 `skywalking-oap.monitoring:11800` 可达 |
+| Pod CrashLoopBackOff | SkyWalking（APM 调用链追踪） OAP 不可达 | 确认 `skywalking-oap.monitoring:11800` 可达 |
 
 ---
 
 ## 八、方案对比速查
 
-| | 方案一 Jenkins+ArgoCD | 方案二 GitLab+ArgoCD | 方案三 纯GitOps |
+| | 方案一 Jenkins+ArgoCD | 方案二 GitLab（代码托管 + CI 平台）+ArgoCD | 方案三 纯GitOps |
 |------|------|------|------|
 | **CI 工具** | Jenkins | GitLab CI Runner | 无 (手动构建) |
 | **CD 工具** | ArgoCD | ArgoCD | ArgoCD |
 | **镜像构建** | Jenkins Pipeline 自动 | `.gitlab-ci.yml` 自动 | 开发者手动 `docker build` |
-| **触发方式** | Webhook+轮询 | Git push → GitLab Runner | 手动更新 Git 清单 |
+| **触发方式** | Webhook+轮询 | Git push → GitLab Runner（GitLab CI 执行器） | 手动更新 Git 清单 |
 | **适用场景** | 传统企业 (已有 Jenkins) | 自建 GitLab 私有部署 | 运维/平台团队 |
 | **学习成本** | 中等 | 低 (与 GitLab 一体) | 高 (无 CI) |
 | **灵活性** | 最高 (Groovy 脚本) | 高 (YAML 配置) | 低 |

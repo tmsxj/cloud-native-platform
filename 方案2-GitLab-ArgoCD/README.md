@@ -1,19 +1,19 @@
-# GitLab + ArgoCD GitOps CI/CD 总结
+# GitLab + ArgoCD（GitOps 持续交付工具） GitOps CI/CD 总结
 
-> 基于自建 K8s 集群（Harbor + ArgoCD + GitLab + GitLab Runner）的真实环境验证
+> 基于自建 K8s 集群（Harbor + ArgoCD + GitLab + GitLab Runner（GitLab CI 执行器））的真实环境验证
 > 验证项目：`tomcat-app`（Java Web 应用，Tomcat 部署）
-> 对比方案 1（Jenkins + Git Server），本方案用 GitLab CI 替代 Jenkins
+> 对比方案 1（Jenkins + Git Server），本方案用 GitLab CI 替代 Jenkins（CI 持续集成工具）
 
 ---
 
 ## 方案对比
 
-| 维度 | 方案 1: Jenkins + Git Server | 方案 2: GitLab + GitLab CI |
+| 维度 | 方案 1: Jenkins + Git Server | 方案 2: GitLab（代码托管 + CI 平台） + GitLab CI |
 |------|---------------------------|--------------------------|
 | **代码仓库** | Git Daemon (git://) | GitLab (HTTP/SSH) |
 | **CI 引擎** | Jenkins (独立部署) | GitLab CI (内置于 GitLab) |
 | **CD 引擎** | ArgoCD | ArgoCD (复用) |
-| **镜像仓库** | Harbor | Harbor (复用) |
+| **镜像仓库** | Harbor（私有镜像仓库） | Harbor (复用) |
 | **流水线定义** | Jenkinsfile (Groovy) | .gitlab-ci.yml (YAML) |
 | **应用语言** | Python (FastAPI + SnowNLP) | Java (Servlet + JSP) |
 | **运行容器** | Python 自定义镜像 | Tomcat 9 |
@@ -105,7 +105,7 @@
 
 ## 二、项目体系
 
-### 2.1 tomcat-app（业务应用 + CI/CD）
+### 2.1 tomcat-app（业务应用 + CI/CD（持续集成/持续交付））
 
 ```
 tomcat-app/                          ← GitLab 仓库
@@ -129,7 +129,7 @@ tomcat-app/                          ← GitLab 仓库
 | 组件 | 命名空间 | 说明 |
 |------|---------|------|
 | **Harbor** | harbor | 镜像仓库（复用方案1） |
-| **ArgoCD** | argocd | GitOps 引擎（复用方案1） |
+| **ArgoCD** | argocd | GitOps（以 Git 为唯一真相源的运维模式） 引擎（复用方案1） |
 | **GitLab** | gitlab | 本方案新增 |
 | **GitLab Runner** | gitlab | 本方案新增 |
 
@@ -187,7 +187,7 @@ Step 12: ArgoCD 自动执行 kubectl apply，将新镜像部署到对应环境
 | 命名空间 | 用途 | 组件 |
 |---------|------|------|
 | `gitlab` | GitLab 服务 | GitLab CE + GitLab Runner |
-| `tomcat-demo` | 演示应用 (旧版) | Tomcat App Deployment + Service |
+| `tomcat-demo` | 演示应用 (旧版) | Tomcat App Deployment（部署，无状态工作负载） + Service |
 | `tomcat-dev` | DEV 环境 | Tomcat App (ArgoCD 托管) |
 | `tomcat-staging` | STAGING 环境 | Tomcat App (ArgoCD 托管) |
 | `tomcat-prod` | PROD 环境 | Tomcat App (ArgoCD 托管) |
@@ -269,7 +269,7 @@ Step 12: ArgoCD 自动执行 kubectl apply，将新镜像部署到对应环境
 |------|---------|
 | detached HEAD 导致 `git push` 失败 | `git checkout -B main` 强制绑定分支 |
 | `git rebase` 与文件修改顺序冲突 | 先 `git fetch + rebase`，再 `sed` 修改文件 |
-| K8s 集群内无法用 `localhost` 访问 GitLab | 改用 `gitlab.gitlab.svc.cluster.local` |
+| K8s（Kubernetes，容器编排引擎） 集群内无法用 `localhost` 访问 GitLab | 改用 `gitlab.gitlab.svc.cluster.local` |
 
 ---
 

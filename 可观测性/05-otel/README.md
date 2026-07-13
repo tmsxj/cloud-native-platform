@@ -1,12 +1,12 @@
-# 05 - OpenTelemetry + LGTM 完整可观测性栈（traces 收口 + 卸 ES + 对象存储）
+# 05 - OpenTelemetry（OTel，可观测性数据采集标准） + LGTM 完整可观测性栈（traces 收口 + 卸 ES + 对象存储）
 
 > 实战目标：用 **OpenTelemetry 标准栈** 收口 traces，并把后端对齐到 **LGTM** 业界标准组合
 > （**L**oki + **G**rafana + **T**empo + **M**imir/对象存储）。
-> 本期先完成 **T = Tempo + MinIO(S3)**，承接原 SkyWalking+ES 的链路追踪，并卸载 Elasticsearch 释放内存；
-> 其后把 **L(Logs) = Loki** 的存储后端也从本地 filesystem 切到同一 MinIO(S3, bucket=loki)，实现 **LGTM 全栈 S3 化**。
+> 本期先完成 **T = Tempo + MinIO(S3)**，承接原 SkyWalking（APM 调用链追踪）+ES 的链路追踪，并卸载 Elasticsearch 释放内存；
+> 其后把 **L(Logs) = Loki（日志系统）** 的存储后端也从本地 filesystem 切到同一 MinIO(S3, bucket=loki)，实现 **LGTM 全栈 S3 化**。
 >
 > 📅 落地日期: 2026-07-09 | 集群: kubeadm 5 节点 | 命名空间: `monitoring`
-> 🔁 演进: 本目录先以 `Jaeger 内存版` 验证 OTLP 链路 → 再升级为 `Tempo + MinIO` 对齐 LGTM 生产标准 → 最后把 `Loki` 存储也切到同一 MinIO(S3) 实现全栈 S3 化（本文档为最终版）
+> 🔁 演进: 本目录先以 `Jaeger（链路追踪） 内存版` 验证 OTLP 链路 → 再升级为 `Tempo + MinIO` 对齐 LGTM 生产标准 → 最后把 `Loki` 存储也切到同一 MinIO(S3) 实现全栈 S3 化（本文档为最终版）
 
 ---
 
@@ -17,12 +17,12 @@
 | 组合 | 后端三件套 + UI | 定位 |
 |------|----------------|------|
 | ES 系（老牌） | Elasticsearch + Kibana | 重资产，搜索强但吃内存（原 SkyWalking+ES 即此路） |
-| **LGTM（事实标准 ✅）** | Prometheus(Mimir)+Loki+**Tempo**+Grafana | 开源现代派，分治、可水平扩展、与 OTel 绑定最深 |
+| **LGTM（事实标准 ✅）** | Prometheus（指标监控系统）(Mimir)+Loki+**Tempo**+Grafana | 开源现代派，分治、可水平扩展、与 OTel 绑定最深 |
 | 商业 SaaS | Datadog / New Relic | 省心、贵 |
 | 一体化 | SigNoz (ClickHouse) | 新兴、对 OTel 最原生 |
 
-> LGTM 的灵魂：**Tempo 用对象存储（S3）做 trace 后端**，而非内存。这样 trace 可长期留存、可水平扩展，
-> 且 Grafana 一个 UI 看 metrics/logs/traces 三件套。本项目已有 Prometheus+Loki+Grafana，补上 **Tempo+MinIO** 即凑齐 LGTM。
+> LGTM 的灵魂：**Tempo（链路追踪后端） 用对象存储（S3）做 trace 后端**，而非内存。这样 trace 可长期留存、可水平扩展，
+> 且 Grafana（可视化面板） 一个 UI 看 metrics/logs/traces 三件套。本项目已有 Prometheus+Loki+Grafana，补上 **Tempo+MinIO** 即凑齐 LGTM。
 
 ---
 
@@ -81,7 +81,7 @@
 
 ### 4.1 离线环境的最简做法（本目录 `otel-demo-app.yaml`）
 
-集群 Pod 有外网，但 m1 无 docker/nerdctl（仅 `ctr`），无法 build 自带 OTel SDK 的镜像；
+集群 Pod（容器组） 有外网，但 m1 无 docker/nerdctl（仅 `ctr`），无法 build 自带 OTel SDK 的镜像；
 而 `pip install opentelemetry` 在运行时偶发失败。因此演示程序**用裸 OTLP/HTTP(JSON) + curl 直接投递**，
 零运行时安装，等价于标准 SDK 的 `BatchSpanProcessor → OTLPSpanExporter`：
 
@@ -114,7 +114,7 @@ export OTEL_TRACES_EXPORTER=otlp
 - Python：`pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http`
   → `OTLPSpanExporter(endpoint="http://otel-collector.monitoring:4318", insecure=True)`
 - Java：挂 `-javaagent:opentelemetry-javaagent.jar`（无需改代码）
-- Go / Node / .NET：对应官方 SDK，endpoint 指向 Collector 即可
+- Go / Node（节点） / .NET：对应官方 SDK，endpoint 指向 Collector 即可
 
 > ⚠️ 踩坑：谷歌 `microservices-demo` 的 frontend 用自研栈（jaeger/stackdriver），**不读** `OTEL_EXPORTER_OTLP_ENDPOINT`，
 > 不可用其作 demo。标准 SDK 或裸 OTLP 才是正确路径。
@@ -155,7 +155,7 @@ curl http://tempo.monitoring:3200/api/search   # {"traces":[{"traceID":...}],...
 
 ## 6. 卸载 SkyWalking + Elasticsearch（释放内存）
 
-原本 SkyWalking/ES 以**裸 manifest**（非 Helm）部署在 `monitoring`，直接删：
+原本 SkyWalking/ES 以**裸 manifest**（非 Helm（K8s 包管理器））部署在 `monitoring`，直接删：
 
 ```bash
 NS=monitoring
@@ -166,13 +166,13 @@ kubectl -n $NS delete pvc data-elasticsearch-0 data-elasticsearch-1 data-elastic
 kubectl -n $NS delete servicemonitor skywalking-oap
 ```
 
-并清理 Ingress：`monitoring-ingress` 原含 `skywalking.lab.local` 路由，已编辑移除。
+并清理 Ingress（入口规则）：`monitoring-ingress` 原含 `skywalking.lab.local` 路由，已编辑移除。
 
 ---
 
 ## 7. Grafana 接入 Tempo 数据源（LGTM 的 G 接 T）
 
-Grafana 原生支持 `tempo` 数据源类型。在预置 ConfigMap `grafana-datasources` 追加：
+Grafana 原生支持 `tempo` 数据源类型。在预置 ConfigMap（配置字典） `grafana-datasources` 追加：
 
 ```yaml
       - name: Tempo
